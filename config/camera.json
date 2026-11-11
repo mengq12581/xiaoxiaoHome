@@ -1,0 +1,13 @@
+{
+  "target": [4.75, 0, 2.25],
+  "minPolarDeg": 25,
+  "maxPolarDeg": 70,
+  "minDistance": 4.5,
+  "maxDistance": 16,
+  "startAzimuthDeg": 225,
+  "startPolarDeg": 55,
+  "startDistance": 12,
+  "wallFadeOpacity": 0.15,
+  "wallFadeWithOutline": true,
+  "wallFadeTarget": "character_or_room_center"
+}

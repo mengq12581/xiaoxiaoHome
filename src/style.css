@@ -1,0 +1,132 @@
+:root {
+  --bg: #f1ebe2;
+  --ink: #3b332c;
+  --ink-soft: #7a6d61;
+  --card: rgba(255, 252, 247, 0.86);
+  --line: rgba(94, 81, 70, 0.18);
+  --accent: #c98b6b;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+#app canvas:active {
+  cursor: grabbing;
+}
+
+.hud {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud-panel {
+  top: 16px;
+  left: 16px;
+  padding: 12px 16px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(80, 60, 40, 0.08);
+  min-width: 168px;
+}
+
+.hud-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.hud-sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.hud-help {
+  list-style: none;
+  margin: 10px 0 10px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.hud-help b {
+  color: var(--ink);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.hud-btn {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.hud-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hud-stats {
+  left: 16px;
+  bottom: 14px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  background: var(--card);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.config-error {
+  position: absolute;
+  inset: 40px;
+  overflow: auto;
+  padding: 24px 28px;
+  background: #fff8f5;
+  border: 2px solid #d9705a;
+  border-radius: 14px;
+  color: #5a2a1e;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.config-error h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.config-error code {
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  background: #fde9e3;
+  padding: 1px 6px;
+  border-radius: 4px;
+}

@@ -1,0 +1,39 @@
+{
+  "active": "xiaoxiao",
+  "characters": [
+    {
+      "id": "xiaoxiao",
+      "name": "笑笑",
+      "height": 1.2,
+      "model": "assets/xiaoxiao_q_turnaround.jpg",
+      "model_type": "procedural",
+      "palette": {
+        "hair": "#17161b",
+        "skin": "#f8e1d4",
+        "dress": "#f3eadf",
+        "dress_print": "#f2d58a",
+        "hair_clip": "#f7f0e3",
+        "eye_iris": "#6b4025",
+        "blush": "#f2b8b0"
+      },
+      "activities": "all"
+    },
+    {
+      "id": "shuaishuai",
+      "name": "帅帅",
+      "height": 1.25,
+      "model": "assets/shuaishuai_q_turnaround.jpg",
+      "model_type": "placeholder",
+      "palette": {
+        "hair": "#1a1a1e",
+        "skin": "#f6dccb",
+        "shirt": "#fbfaf7",
+        "shirt_print": "#f4c56a",
+        "shorts": "#26365a",
+        "socks": "#ffffff",
+        "glasses": "#3a3a40"
+      },
+      "activities": "all"
+    }
+  ]
+}

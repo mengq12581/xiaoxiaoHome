@@ -1,0 +1,26 @@
+{
+  "name": "xiaoxiao-home",
+  "version": "0.1.0",
+  "private": true,
+  "description": "本地离线运行的 3D 小家（一室一厅 + Q 版笑笑）",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.6",
+    "@types/three": "0.170.0",
+    "typescript": "5.6.3",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "activities": {
+    "use_computer": {
+      "anim": "sit_type",
+      "anchor": "desk_seat",
+      "min_dwell": 60,
+      "weight": 0,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": ["screen_glow"]
+    },
+    "write_notes": {
+      "anim": "sit_write",
+      "anchor": "desk_seat",
+      "min_dwell": 90,
+      "weight": 0,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": ["notebook_open"]
+    },
+    "watch_tv": {
+      "anim": "sit_watch",
+      "anchor": "sofa_seat",
+      "min_dwell": 45,
+      "weight": 30,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": []
+    },
+    "listen_music": {
+      "anim": "listen",
+      "anchor": ["sofa_seat", "window_stand"],
+      "prefer_anchor": "sofa_seat",
+      "min_dwell": 45,
+      "weight": 20,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": ["headphones"]
+    },
+    "sleep": {
+      "anim": "lie_sleep",
+      "anchor": "bed_lie",
+      "min_dwell": 120,
+      "weight": 15,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": ["blanket_cover"]
+    },
+    "daydream_window": {
+      "anim": "stand_gaze",
+      "anchor": "window_stand",
+      "min_dwell": 60,
+      "weight": 20,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": []
+    },
+    "wander": {
+      "anim": "walk_look",
+      "anchor": null,
+      "min_dwell": 20,
+      "weight": 15,
+      "duration": [60, 240],
+      "face": "path",
+      "props": []
+    },
+    "eat": {
+      "anim": "sit_eat",
+      "anchor": "tea_table_seat",
+      "min_dwell": 60,
+      "weight": 0,
+      "duration": [60, 240],
+      "face": "anchor_forward",
+      "props": ["bowl"]
+    },
+    "idle_stand": {
+      "anim": "stand_idle",
+      "anchor": null,
+      "min_dwell": 10,
+      "weight": 0,
+      "duration": [10, 30],
+      "face": "keep",
+      "props": []
+    },
+    "idle": {
+      "anim": "none",
+      "anchor": null,
+      "min_dwell": 0,
+      "weight": 0,
+      "duration": [0, 0],
+      "face": "keep",
+      "props": [],
+      "note": "控制项：回落空闲池（见 docs/验收问题.md A4）"
+    }
+  },
+  "quiet_hours": ["23:30", "07:30"],
+  "idle_after_sec": 120,
+  "idle_pool_override": {
+    "quiet": { "sleep": 60, "daydream_window": 25, "wander": 15 }
+  }
+}
