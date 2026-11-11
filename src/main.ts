@@ -10,6 +10,7 @@ import { indexAnchors } from './scene/anchors';
 import { Pathfinder, furnitureObstacles, wallObstacles } from './nav/pathfinder';
 import { buildCharacter } from './character/model';
 import { CharacterAgent, type LogFn } from './character/agent';
+import { ContactShadow } from './character/contactShadow';
 import { createHud, showConfigErrors } from './ui/hud';
 import { createDevPanel } from './ui/devPanel';
 
@@ -87,6 +88,11 @@ function boot(cfg: AppConfig) {
   const spawn: Vec2 = spec.spawn ?? cfg.rooms.nav.nodes[0];
   const agent = new CharacterAgent(character, pathfinder, spawn, -90, { log });
   const anchors = indexAnchors(cfg.furniture.items);
+  const contact = new ContactShadow(character.scale);
+  scene.add(contact.group);
+  const syncContact = () =>
+    contact.update(agent.position, character.root.rotation.y, agent.sitWeight, agent.seatHeight);
+  syncContact();
 
   // 墙体遮挡检测用 matrixWorld 做射线；首帧渲染前就要算好，否则第一次检测全打偏
   scene.updateMatrixWorld(true);
@@ -155,6 +161,7 @@ function boot(cfg: AppConfig) {
   let fps = 0;
   const renderFrame = (dt: number) => {
     agent.update(dt);
+    syncContact();
     syncPathLine();
     rig.update();
     fader.update(rig.camera, fadeTargets(), dt);
@@ -213,6 +220,7 @@ function boot(cfg: AppConfig) {
           agent.update(dt);
           if (until?.()) break;
         }
+        syncContact();
         syncPathLine();
         rig.update();
         for (let i = 0; i < 30; i++) fader.update(rig.camera, fadeTargets(), 0.1);

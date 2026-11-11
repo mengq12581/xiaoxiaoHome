@@ -54,8 +54,9 @@ export class WallFader {
       w.material.depthWrite = solid;
       // 半透明墙后渲染，避免挡住其后的家具
       for (const m of w.meshes) m.renderOrder = solid ? 0 : 3;
-      w.edges.visible = solid || this.cfg.wallFadeWithOutline;
-      w.edgeMaterial.opacity = solid ? 0.55 : 0.9;
+      // 实体墙不描线；只有被透明掉的墙保留轮廓（PRD F-01、docs/验收问题.md C2/C4）
+      w.edges.visible = !solid && this.cfg.wallFadeWithOutline;
+      w.edgeMaterial.opacity = 0.9;
     }
   }
 }

@@ -1,6 +1,7 @@
 // 由 rooms.json 生成地板、墙体（真实开洞、每段独立 mesh）、门框、窗框与玻璃。
 
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { RoomsConfig } from '../config/types';
 import { computeWallLayout, normBounds, wallPieces, type Opening, type WallSegment } from './layout';
 import { FLOOR_TEXTURE_METERS, floorTexture } from './textures';
@@ -92,24 +93,59 @@ const trimMat = new THREE.MeshLambertMaterial({ color: TRIM_COLOR });
 const frameMat = new THREE.MeshLambertMaterial({ color: FRAME_COLOR });
 const glassMat = new THREE.MeshLambertMaterial({ color: 0xbfdcec, transparent: true, opacity: 0.32, depthWrite: false });
 
-/** 门框（两侧立框 + 上框），略厚于墙 */
+/** 与 wallBox 同尺寸的圆角盒（门窗框用，边角不尖） */
+function roundedWallBox(seg: Pick<WallSegment, 'orient' | 'c'>, s: number, e: number, y0: number, y1: number, t: number, radius = 0.012) {
+  const len = e - s;
+  const h = y1 - y0;
+  const r = Math.min(radius, Math.min(len, h, t) * 0.45);
+  const geo = seg.orient === 'h' ? new RoundedBoxGeometry(len, h, t, 2, r) : new RoundedBoxGeometry(t, h, len, 2, r);
+  const pos = seg.orient === 'h' ? P((s + e) / 2, (y0 + y1) / 2, seg.c) : P(seg.c, (y0 + y1) / 2, (s + e) / 2);
+  return { geo, pos };
+}
+
+/** 门洞上方内角的四分之一圆角块：side = -1 左角（贴 op.s），+1 右角（贴 op.e） */
+function doorFillet(op: Opening, side: -1 | 1, R: number, t: number): THREE.Mesh {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  if (side === -1) {
+    shape.lineTo(R, 0);
+    shape.absarc(R, -R, R, Math.PI / 2, Math.PI, false);
+  } else {
+    shape.lineTo(-R, 0);
+    shape.absarc(-R, -R, R, Math.PI / 2, 0, true);
+  }
+  shape.lineTo(0, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 16 });
+  geo.translate(0, 0, -t / 2);
+  const m = new THREE.Mesh(geo, trimMat);
+  const along = side === -1 ? op.s : op.e;
+  if (op.orient === 'h') {
+    m.position.copy(P(along, op.top, op.c));
+  } else {
+    m.position.copy(P(op.c, op.top, along));
+    m.rotation.y = Math.PI / 2;
+  }
+  return m;
+}
+
+/** 门框（两侧立框 + 上框 + 上方两个圆角），略厚于墙，所有边角倒圆 */
 function buildDoorFrame(op: Opening, thickness: number): THREE.Group {
   const g = new THREE.Group();
   g.name = `door:${op.id}`;
   const w = 0.06;
   const t = thickness + 0.03;
   const parts: [number, number, number, number][] = [
-    [op.s - w, op.s, 0, op.top],
-    [op.e, op.e + w, 0, op.top],
-    [op.s - w, op.e + w, op.top, op.top + w],
+    [op.s - w, op.s, 0, op.top + w],
+    [op.e, op.e + w, 0, op.top + w],
+    [op.s - w / 2, op.e + w / 2, op.top, op.top + w],
   ];
   for (const [s, e, y0, y1] of parts) {
-    const { geo, pos } = wallBox(op, s, e, y0, y1, t);
+    const { geo, pos } = roundedWallBox(op, s, e, y0, y1, t);
     const m = new THREE.Mesh(geo, trimMat);
     m.position.copy(pos);
-    m.castShadow = false;
     g.add(m);
   }
+  for (const side of [-1, 1] as const) g.add(doorFillet(op, side, 0.09, t - 0.004));
   return g;
 }
 
@@ -137,10 +173,9 @@ function buildWindow(op: Opening, thickness: number): THREE.Group {
     bars.push([op.s, op.e, y - f / 2, y + f / 2]);
   }
   for (const [s, e, y0, y1] of bars) {
-    const { geo, pos } = wallBox(op, s, e, y0, y1, t);
+    const { geo, pos } = roundedWallBox(op, s, e, y0, y1, t, 0.01);
     const m = new THREE.Mesh(geo, frameMat);
     m.position.copy(pos);
-    m.castShadow = false;
     g.add(m);
   }
   const { geo, pos } = wallBox(op, op.s + f, op.e - f, op.bottom + f, op.top - f, 0.015);
@@ -150,10 +185,9 @@ function buildWindow(op: Opening, thickness: number): THREE.Group {
   g.add(glass);
   // 窗台板
   if (op.bottom > 0.3) {
-    const sill = wallBox(op, op.s - 0.05, op.e + 0.05, op.bottom - 0.03, op.bottom, thickness + 0.12);
+    const sill = roundedWallBox(op, op.s - 0.05, op.e + 0.05, op.bottom - 0.03, op.bottom, thickness + 0.12);
     const m = new THREE.Mesh(sill.geo, trimMat);
     m.position.copy(sill.pos);
-    m.castShadow = false;
     g.add(m);
   }
   return g;

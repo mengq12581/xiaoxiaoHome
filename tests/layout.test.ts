@@ -61,18 +61,18 @@ describe('家具局部坐标', () => {
   const raw = readRawConfig();
   const item = (id: string) => raw.furniture.items.find((i: { id: string }) => i.id === id);
 
-  it('沙发坐点在沙发正前方，人面朝 +x（电视方向）', () => {
+  it('沙发坐点在沙发正前方（坐在座垫前半，小腿能垂下），人面朝 +x（电视方向）', () => {
     const sofa = item('sofa');
     const pose = anchorPose(sofa, sofa.anchors[0]);
-    expect(pose.plan[0]).toBeCloseTo(0.63);
+    expect(pose.plan[0]).toBeCloseTo(0.89);
     expect(pose.plan[1]).toBeCloseTo(2.2);
     expect(pose.headingDeg).toBeCloseTo(0);
   });
 
-  it('电脑桌坐点落在椅子位置，人面朝桌子（+x）', () => {
+  it('电脑桌坐点在椅面前半（椅子中心往桌子方向 0.12 米），人面朝桌子（+x）', () => {
     const desk = item('desk');
     const pose = anchorPose(desk, desk.anchors[0]);
-    expect(pose.plan[0]).toBeCloseTo(item('office_chair').position[0]);
+    expect(pose.plan[0]).toBeCloseTo(item('office_chair').position[0] + 0.12);
     expect(pose.plan[1]).toBeCloseTo(item('office_chair').position[1]);
     expect(pose.headingDeg).toBeCloseTo(0);
   });
@@ -80,7 +80,7 @@ describe('家具局部坐标', () => {
   it('改沙发 position 后，占地与坐点跟着走', () => {
     const sofa = { ...item('sofa'), position: [3, 3.5] };
     const pose = anchorPose(sofa, sofa.anchors[0]);
-    expect(pose.plan[0]).toBeCloseTo(3.08);
+    expect(pose.plan[0]).toBeCloseTo(3.34);
     expect(pose.plan[1]).toBeCloseTo(3.5);
     const xs = footprint(sofa).map((p) => p[0]);
     expect(Math.min(...xs)).toBeCloseTo(2.55);

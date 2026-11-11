@@ -88,6 +88,10 @@ export class CharacterAgent {
   private walkAmt = 0;
   private seatAmt = 0;
   private moving = false;
+  private blinkWait = 2;
+  private blinkDouble = false;
+  private eye: 0 | 1 | 2 = 0;
+  private seed = 20261111;
 
   constructor(
     readonly rig: CharacterRig,
@@ -100,6 +104,16 @@ export class CharacterAgent {
     this.position = [spawn[0], spawn[1]];
     this.headingDeg = headingDeg;
     this.applyPose();
+  }
+
+  /** 坐姿权重 0～1（接触阴影等用） */
+  get sitWeight() {
+    return this.seatAmt;
+  }
+
+  /** 当前（或正在坐下 / 起身的）座面高度，米 */
+  get seatHeight() {
+    return (this.tween.seat ?? this.seat)?.height ?? 0;
   }
 
   get busy() {
@@ -287,30 +301,90 @@ export class CharacterAgent {
     }
   }
 
+  /** 眨眼：间隔 2.5～6 秒随机，偶尔连眨两下；半闭 → 闭 → 半闭 → 睁 */
+  private updateBlink(dt: number) {
+    this.blinkWait -= dt;
+    if (this.blinkWait > 0) return;
+    const t = -this.blinkWait;
+    const seq = this.blinkDouble ? [0.05, 0.13, 0.18, 0.26, 0.34, 0.39] : [0.05, 0.13, 0.18];
+    let eye: 0 | 1 | 2 = 0;
+    if (t < seq[0]) eye = 1;
+    else if (t < seq[1]) eye = 2;
+    else if (t < seq[2]) eye = 1;
+    else if (this.blinkDouble && t < seq[3]) eye = 0;
+    else if (this.blinkDouble && t < seq[4]) eye = 2;
+    else if (this.blinkDouble && t < seq[5]) eye = 1;
+    else {
+      this.blinkWait = 2.5 + this.rand() * 3.5;
+      this.blinkDouble = this.rand() < 0.2;
+    }
+    if (eye !== this.eye) {
+      this.eye = eye;
+      this.rig.setEyes(eye);
+    }
+  }
+
+  private rand() {
+    this.seed = (this.seed * 16807) % 2147483647;
+    return (this.seed - 1) / 2147483646;
+  }
+
   /** 把当前状态写到骨架上 */
   private applyPose(dt = 0) {
     const r = this.rig;
     r.root.position.set(this.position[0], 0, -this.position[1]);
     r.root.rotation.y = rad(this.headingDeg) + Math.PI / 2;
+    this.updateBlink(dt);
+    r.setSitBlend(this.seatAmt);
 
     const walkGoal = this.state === 'walking' ? (this.moving ? 1 : 0.45) : this.state === 'turning' ? 0.45 : 0;
     this.walkAmt += (walkGoal - this.walkAmt) * Math.min(1, dt * 8);
     if (this.state === 'seated') this.seatAmt = 1;
     else if (this.state === 'idle' || this.state === 'walking' || this.state === 'turning') this.seatAmt = 0;
 
-    const seatH = (this.tween.seat ?? this.seat)?.height ?? REF_HIP_HEIGHT * r.scale;
+    const k = this.seatAmt; // 坐姿权重
+    const w = this.walkAmt; // 走路权重
+    const calm = (1 - w) * (1 - k); // 站立待机权重
+    const t = this.time;
     const swing = Math.sin(this.phase);
-    const legBase = -1.45 * this.seatAmt;
-    const armBase = -0.42 * this.seatAmt;
-    r.legL.rotation.x = legBase + 0.5 * this.walkAmt * swing;
-    r.legR.rotation.x = legBase - 0.5 * this.walkAmt * swing;
-    r.armL.rotation.x = armBase - 0.38 * this.walkAmt * swing;
-    r.armR.rotation.x = armBase + 0.38 * this.walkAmt * swing;
-    r.body.position.y = lerp(REF_HIP_HEIGHT, seatH / r.scale, this.seatAmt) + 0.012 * this.walkAmt * Math.abs(Math.cos(this.phase));
-    r.torso.rotation.x = 0.06 * this.walkAmt - 0.04 * this.seatAmt;
-    r.torso.scale.y = 1 + 0.012 * Math.sin(this.time * 2.4);
-    const calm = 1 - this.walkAmt;
-    r.head.rotation.y = 0.1 * calm * Math.sin(this.time * 0.35);
-    r.head.rotation.z = 0.025 * calm * Math.sin(this.time * 0.9);
+    const breath = Math.sin(t * 2.3);
+    const sway = Math.sin(t * 1.35); // 重心左右缓慢移动（约 4.6 秒一个来回）
+
+    // 胯：高度、左右重心、走路上下起伏
+    const seatH = (this.tween.seat ?? this.seat)?.height ?? REF_HIP_HEIGHT * r.scale;
+    r.body.position.y = lerp(REF_HIP_HEIGHT, seatH / r.scale, k) + 0.012 * w * Math.abs(Math.cos(this.phase));
+    r.body.position.x = 0.007 * calm * sway;
+    r.body.rotation.z = 0.022 * calm * sway;
+
+    // 腿：站立时脚基本不动（补偿胯的倾斜）；走路摆腿 + 抬腿时屈膝；坐下时膝盖并拢、一前一后
+    r.legL.rotation.set(
+      -1.42 * k + 0.5 * w * swing,
+      -0.1 * k,
+      -0.022 * calm * sway,
+    );
+    r.legR.rotation.set(
+      -1.3 * k - 0.5 * w * swing,
+      0.12 * k,
+      -0.022 * calm * sway,
+    );
+    r.shinL.rotation.x = 1.5 * k + 0.55 * w * Math.max(0, -Math.sin(this.phase - 0.5));
+    r.shinR.rotation.x = 1.18 * k + 0.55 * w * Math.max(0, Math.sin(this.phase - 0.5));
+
+    // 上身：呼吸起伏、走路略前倾、坐下略前倾放松、站立时与胯反向轻摆
+    r.torso.rotation.x = 0.06 * w + 0.12 * k;
+    r.torso.rotation.z = -0.03 * calm * sway;
+    r.torso.scale.y = 1 + 0.013 * breath;
+
+    // 手臂：自然下垂略外张；走路前后摆；坐下时手放松搭在膝上（左右不对称）
+    const roll = 0.22 + 0.012 * breath;
+    r.armL.rotation.set(-0.38 * w * swing - 0.56 * k, 0, roll * (1 - k) + 0.07 * k);
+    r.armR.rotation.set(0.38 * w * swing - 0.64 * k, 0, -roll * (1 - k) - 0.05 * k);
+    r.foreL.rotation.x = -0.08 - 0.15 * w * Math.max(0, swing) - 0.5 * k;
+    r.foreR.rotation.x = -0.08 - 0.15 * w * Math.max(0, -swing) - 0.36 * k;
+
+    // 头：待机时偶尔左右看看；坐着微微歪头、略低头
+    r.head.rotation.x = 0.05 * k + 0.012 * breath * (1 - w);
+    r.head.rotation.y = 0.1 * (1 - w) * Math.sin(t * 0.35);
+    r.head.rotation.z = 0.02 * calm * sway + 0.06 * k + 0.02 * (1 - w) * Math.sin(t * 0.9);
   }
 }

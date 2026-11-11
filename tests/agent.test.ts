@@ -98,6 +98,37 @@ describe('角色走位', () => {
     expect(agent.position[0]).toBeCloseTo(4.2, 5);
   });
 
+  it('站着待机不是呆的：会眨眼、重心左右轻摆、呼吸起伏', () => {
+    const rig = createBareRig('t');
+    const eyes: number[] = [];
+    rig.setEyes = (s) => eyes.push(s);
+    const agent = new CharacterAgent(rig, pf(), [2.65, 2.2]);
+    const xs: number[] = [];
+    const breath: number[] = [];
+    run(agent, 12, () => {
+      xs.push(rig.body.position.x);
+      breath.push(rig.torso.scale.y);
+    });
+    expect(eyes.filter((e) => e === 2).length).toBeGreaterThanOrEqual(2); // 12 秒内至少眨两次
+    expect(eyes[eyes.length - 1]).toBe(0); // 眨完会睁开
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.01);
+    expect(Math.max(...breath) - Math.min(...breath)).toBeGreaterThan(0.02);
+    expect(agent.position).toEqual([2.65, 2.2]); // 摆动只在身体上，不挪位置
+  });
+
+  it('坐姿松弛：上身前倾、膝盖并拢、两腿一前一后、手臂不对称', () => {
+    const rig = createBareRig('t');
+    const agent = new CharacterAgent(rig, pf(), [2.65, 2.2]);
+    agent.sitAt(seatOf('sofa'));
+    run(agent, 30);
+    expect(agent.state).toBe('seated');
+    expect(rig.torso.rotation.x).toBeGreaterThan(0.08);
+    expect(rig.legL.rotation.y).toBeLessThan(0); // 左膝往里收
+    expect(rig.legR.rotation.y).toBeGreaterThan(0); // 右膝往里收
+    expect(Math.abs(rig.shinL.rotation.x - rig.shinR.rotation.x)).toBeGreaterThan(0.2);
+    expect(Math.abs(rig.armL.rotation.x - rig.armR.rotation.x)).toBeGreaterThan(0.04);
+  });
+
   it('寻路无解：原地不动，写一条警告', () => {
     const logs: string[] = [];
     const agent = new CharacterAgent(createBareRig('t'), pf(), [2.65, 2.2], -90, {

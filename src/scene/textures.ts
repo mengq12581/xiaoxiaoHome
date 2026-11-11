@@ -99,3 +99,62 @@ export function floorTexture(kind: string): THREE.CanvasTexture {
   cache.set(kind, tex);
   return tex;
 }
+
+/** 哑光木纹（灰度，乘在材质颜色上）：细长纹理 + 少量节疤感的深浅变化 */
+export function woodGrainTexture(): THREE.CanvasTexture {
+  const hit = cache.get('__wood');
+  if (hit) return hit;
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, size, size);
+  const rnd = seeded(77);
+  for (let i = 0; i < 55; i++) {
+    const y = rnd() * size;
+    const shade = 200 + Math.floor(rnd() * 45);
+    g.strokeStyle = `rgba(${shade},${shade - 8},${shade - 18},0.32)`;
+    g.lineWidth = 0.6 + rnd() * 2.2;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= size; x += 16) g.lineTo(x, y + Math.sin(x * 0.03 + i) * (1 + rnd() * 2.5));
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  cache.set('__wood', t);
+  return t;
+}
+
+/** 织物（灰度）：细密经纬 + 轻微起伏，哑光 */
+export function fabricTexture(): THREE.CanvasTexture {
+  const hit = cache.get('__fabric');
+  if (hit) return hit;
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f4f4f4';
+  g.fillRect(0, 0, size, size);
+  const rnd = seeded(5);
+  for (let i = 0; i < size; i += 2) {
+    g.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.25})`;
+    g.fillRect(0, i, size, 1);
+    g.fillStyle = `rgba(210,210,210,${0.2 + rnd() * 0.2})`;
+    g.fillRect(i, 0, 1, size);
+  }
+  for (let i = 0; i < 400; i++) {
+    const v = 225 + Math.floor(rnd() * 30);
+    g.fillStyle = `rgba(${v},${v},${v},0.5)`;
+    g.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 2, 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3, 3);
+  cache.set('__fabric', t);
+  return t;
+}
