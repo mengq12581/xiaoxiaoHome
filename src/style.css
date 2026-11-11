@@ -106,6 +106,42 @@ body {
   border: 1px solid var(--line);
 }
 
+.dev-panel {
+  top: 16px;
+  right: 16px;
+  width: 220px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px dashed rgba(201, 139, 107, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(80, 60, 40, 0.08);
+}
+
+.dev-title {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dev-actions .hud-btn {
+  font-size: 12px;
+  padding: 4px 9px;
+}
+
+.dev-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
+
 .config-error {
   position: absolute;
   inset: 40px;

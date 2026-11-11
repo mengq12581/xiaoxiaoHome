@@ -7,12 +7,12 @@ export interface Hud {
   onReset(fn: () => void): void;
 }
 
-export function createHud(root: HTMLElement): Hud {
+export function createHud(root: HTMLElement, subtitle: string): Hud {
   const panel = document.createElement('div');
   panel.className = 'hud hud-panel';
   panel.innerHTML = `
     <div class="hud-title">小家 3D</div>
-    <div class="hud-sub">v0.1 · M1 场景与相机</div>
+    <div class="hud-sub">${subtitle}</div>
     <ul class="hud-help">
       <li><b>左键拖动</b> 环绕旋转</li>
       <li><b>滚轮</b> 缩放</li>

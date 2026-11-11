@@ -58,6 +58,8 @@ export interface AnchorSpec {
   /** [右, 前, 高]，家具局部坐标（米） */
   local: Vec3;
   facing: Facing;
+  /** 坐下 / 躺下前的站位 [右, 前]（家具局部坐标）；缺省时直接走到交互点 */
+  approach?: Vec2;
   activity?: string;
 }
 
@@ -105,6 +107,8 @@ export interface CharacterSpec {
   height: number;
   model: string;
   model_type: 'procedural' | 'placeholder' | 'gltf';
+  /** 出生点（平面坐标） */
+  spawn?: Vec2;
   palette: Record<string, string>;
   activities: 'all' | string[];
 }

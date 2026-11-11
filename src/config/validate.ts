@@ -286,6 +286,7 @@ function validateFurniture(raw: unknown, rooms: RoomsConfig | null): ConfigIssue
         }
         need(c, a, ap, 'local', (v) => isVec(v, 3), '[右,前,高]');
         need(c, a, ap, 'facing', (v) => v === 'forward' || v === 'toward', '"forward" 或 "toward"');
+        opt(c, a, ap, 'approach', (v) => isVec(v, 2), '[右,前]');
         opt(c, a, ap, 'activity', isStr, '活动 id');
       });
     }
@@ -377,6 +378,7 @@ function validateCharacters(raw: unknown): ConfigIssue[] {
     need(c, ch, p, 'name', isStr, '非空字符串');
     need(c, ch, p, 'height', (v) => isNum(v) && v >= 0.6 && v <= 2.2, '0.6～2.2 之间的数（米）');
     need(c, ch, p, 'model', isStr, '形象依据路径');
+    opt(c, ch, p, 'spawn', (v) => isVec(v, 2), '[x,y]');
     need(c, ch, p, 'model_type', (v) => v === 'procedural' || v === 'placeholder' || v === 'gltf', '"procedural" / "placeholder" / "gltf"');
     if (need(c, ch, p, 'palette', isObj, '对象')) {
       for (const [k, v] of Object.entries(ch.palette as Record<string, unknown>)) {
