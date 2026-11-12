@@ -1,6 +1,6 @@
 # 角色建模流水线：三视图 → 游戏里的 3D 角色
 
-把 `assets/xiaoxiao_q_turnaround.jpg` 这样的 Q 版三视图（正 / 侧 / 背）变成 `assets/models/<id>.glb`，
+把 `assets/<id>_q_turnaround.jpg` 这样的 Q 版三视图（正 / 侧 / 背）变成 `assets/models/<id>.glb`（笑笑和帅帅都是这样做出来的），
 前端（`src/character/gltfModel.ts`）把它绑到现成的骨架上，走路、坐下、待机、眨眼这些动作不用改。
 
 这些脚本**只在重做模型时才需要跑**；游戏运行不依赖 Python，也不联网。
@@ -26,16 +26,18 @@ python -m venv venv && ./venv/bin/pip install -r tools/character/requirements.tx
 git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2 ../Hunyuan3D-2
 export PYTHONPATH=../Hunyuan3D-2
 
-# 1. 三视图切成三张去背景的图
-./venv/bin/python tools/character/prepare_views.py assets/xiaoxiao_q_turnaround.jpg work/views
+# 1. 三视图切成三张去背景的图。最后一个参数是侧视图里角色脸朝哪边（笑笑 right，帅帅 left）
+./venv/bin/python tools/character/prepare_views.py assets/xiaoxiao_q_turnaround.jpg work/xiaoxiao/views right
 
 # 2. 多视图建模（首次运行会从 Hugging Face 下载约 5G 权重）
-./venv/bin/python tools/character/gen_shape.py work/views work/raw.glb --steps 5 --octree 320
+./venv/bin/python tools/character/gen_shape.py work/xiaoxiao/views work/xiaoxiao/raw.glb --steps 5 --octree 320
 
-# 3. 后处理并导出到 assets/models/
+# 3. 后处理并导出到 assets/models/（尺寸配置读 tools/character/chars/xiaoxiao.json）
 cd tools/character
-../../venv/bin/python build_character.py ../../work/raw.glb ../../work/views ../../assets/models xiaoxiao --debug ../../work/debug
+../../venv/bin/python build_character.py ../../work/xiaoxiao/raw.glb ../../work/xiaoxiao/views ../../assets/models xiaoxiao --debug ../../work/xiaoxiao/debug
 ```
+
+帅帅同理：把上面的 `xiaoxiao` 换成 `shuaishuai`，第 1 步的朝向换成 `left`。
 
 `--debug` 目录里会留下每一步的预览图（顶点上色、蒙皮权重分区、贴图、成品多角度），不用开游戏就能检查。
 `inspect_mesh.py <mesh.glb> <out.png>` 可以把任意网格渲染成多角度预览。
@@ -57,16 +59,28 @@ cd tools/character
 7. **导出**：`<id>.glb`（网格 + 贴图，顶点属性 `_joints` / `_weights` 是蒙皮数据，另有 `lid_half` / `lid_closed` 两个眼睑网格）
    和 `<id>.rig.json`（关节位置，前端按它摆骨架）。
 
-## 换一个角色时要改的地方
+## 加一个新角色
 
-`build_character.py` 顶部的 `K = dict(...)` 是从三视图上量出来的关键尺寸（参考身高 1.2 米）：
-裙摆高度、肩和手的位置、眼睛中心与大小、脸 / 耳朵 / 发卡 / 印花所在的范围。换角色（比如帅帅）要重新量一遍；
-调试时看 `--debug` 目录里的图。服装结构不同（裤子、短发、眼镜）的角色，分类规则也要相应改。
+1. 第 1、2 步照常跑。
+2. 第 3 步先加 `--measure`：只做对齐和初步上色，在 `--debug` 目录输出 `0_measure.png`（带刻度的正 / 侧视图，每格 0.1 米）
+   和 `0_shape.png`（白模多角度）。
+3. 对着刻度图把关键尺寸量出来，写成 `chars/<id>.json`（照着 `xiaoxiao.json` / `shuaishuai.json` 抄，文件里有每个字段的说明）：
+   服装类型、裙摆 / 裤脚 / 袜口 / 下摆高度、肩和手的位置、眼睛中心与大小、脸 / 耳朵 / 印花 / 发卡的范围。
+4. 去掉 `--measure` 正式跑，看 `4_textured.png` 和 `2_skin_weights.png`，不对就改配置重跑（一次约 30 秒）。
+
+目前支持两种服装：`dress`（连衣裙，裙摆跟大腿）和 `shirt_shorts`（T 恤 + 短裤 + 袜子）。别的服装结构要在
+`build_character.py` 的「按部位贴标签」和「蒙皮权重」两段里加分支。
+
+手臂和身体长在一起的角色（比如帅帅手插兜），在配置里把 `arms` 设成 `[]`：手臂不单独蒙皮，整体跟着上身，
+否则一摆臂就会把身体侧面扯变形。
 
 ## 已知的不足
 
-- 发梢是碎的：蒸馏版模型（5 步）在细发丝处不够干净。非蒸馏版（`gen_shape.py --full --steps 30`）可能更好，
+- （笑笑）发梢是碎的：蒸馏版模型（5 步）在细发丝处不够干净。非蒸馏版（`gen_shape.py --full --steps 30`）可能更好，
   但在 CPU 上要一小时左右、内存约 12G 以上，这次没有跑完。
-- 手臂和搭在上面的头发在网格上是连成一体的：手臂大幅前摆（坐姿）时，袖子附近会有被拉伸的痕迹。
-- 坐下时裙子后片只是跟着大腿转，没有真正的布料垂坠；后片会插进座面里（被沙发挡住）。
-- 发卡是画在头发表面的，没有单独的厚度。
+- （笑笑）手臂和搭在上面的头发在网格上是连成一体的：手臂大幅前摆（坐姿）时，袖子附近会有被拉伸的痕迹。
+- （笑笑）坐下时裙子后片只是跟着大腿转，没有真正的布料垂坠；后片会插进座面里（被沙发挡住）。
+- （笑笑）发卡是画在头发表面的，没有单独的厚度。
+- （帅帅）手臂不单独摆动：走路时手不前后摆，坐下时手也不搭在膝上。
+- （帅帅）眼镜是画在脸上的，没有立体镜框；从侧面看不到镜腿。
+- （帅帅）上衣下摆和手、裤兜交界处的边缘有些毛糙。

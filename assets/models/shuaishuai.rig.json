@@ -1,0 +1,36 @@
+{
+  "joints": [
+    "body",
+    "torso",
+    "head",
+    "armL",
+    "foreL",
+    "armR",
+    "foreR",
+    "legL",
+    "shinL",
+    "legR",
+    "shinR"
+  ],
+  "neckY": 0.7,
+  "hipX": 0.075,
+  "shoulder": [
+    0.15,
+    0.62,
+    -0.03
+  ],
+  "upperArm": 0.13,
+  "armRestAngle": 0.22,
+  "elbow": [
+    -0.0144,
+    -0.1292,
+    0
+  ],
+  "source": {
+    "tool": "Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, hunyuan3d-dit-v2-mv-turbo)",
+    "reference": "assets/shuaishuai_q_turnaround.jpg",
+    "vertices": 35009,
+    "faces": 59998,
+    "texture": 2048
+  }
+}

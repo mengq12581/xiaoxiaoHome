@@ -4,7 +4,8 @@
 「颜色接近背景（或脚下阴影）的像素」里，凡是和图片边缘连通的都算背景。
 裙子颜色虽然接近背景，但被描边围住、不与边缘连通，不会被误删。
 
-用法：python prepare_views.py <三视图.jpg> <输出目录>
+用法：python prepare_views.py <三视图.jpg> <输出目录> [left|right]
+  第三个参数是侧视图里角色脸朝哪边（默认 right）；输出文件相应叫 side_right.png 或 side_left.png
 """
 import sys
 from pathlib import Path
@@ -13,6 +14,8 @@ import cv2
 import numpy as np
 
 src, out = Path(sys.argv[1]), Path(sys.argv[2])
+facing = sys.argv[3] if len(sys.argv) > 3 else 'right'
+assert facing in ('left', 'right')
 out.mkdir(parents=True, exist_ok=True)
 bgr = cv2.imread(str(src))
 H, W = bgr.shape[:2]
@@ -51,7 +54,7 @@ low[int(y1 - (y1 - y0) * 0.12):] = True
 row_bg = np.median(np.concatenate([rgb[:, :60], rgb[:, -60:]], axis=1), axis=1)
 row_bg = cv2.GaussianBlur(row_bg[None].astype(np.float32), (0, 0), 30, borderType=cv2.BORDER_REPLICATE)[0]
 d_row = np.linalg.norm(rgb - row_bg[:, None, :], axis=2)
-cand = (np.minimum(d_bg, d_row) < 17) | (low & (d_seg < 11))
+cand = (np.minimum(d_bg, d_row) < 17) | (low & (d_seg < 11) & (d_bg < 60))
 n, labels = cv2.connectedComponents(cand.astype(np.uint8), connectivity=4)
 edge = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
 background = np.isin(labels, edge) & cand
@@ -60,7 +63,8 @@ alpha = (~background).astype(np.uint8) * 255
 alpha = cv2.morphologyEx(alpha, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
 alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8))
 
-names = ['front', 'side_right', 'back']  # 侧视图画的是她自己的右侧（脸朝画面右）
+# 脸朝画面右 = 画的是角色自己的右侧；脸朝画面左 = 左侧
+names = ['front', f'side_{facing}', 'back']
 pad = 40
 size = max(max(x1 - x0 for x0, x1 in runs), y1 - y0) + pad * 2
 for (x0, x1), name in zip(runs, names):

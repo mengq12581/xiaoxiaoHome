@@ -23,8 +23,8 @@
       "id": "shuaishuai",
       "name": "帅帅",
       "height": 1.25,
-      "model": "assets/shuaishuai_q_turnaround.jpg",
-      "model_type": "placeholder",
+      "model": "assets/models/shuaishuai.glb",
+      "model_type": "gltf",
       "spawn": [2.65, 2.2],
       "palette": {
         "hair": "#1a1a1e",

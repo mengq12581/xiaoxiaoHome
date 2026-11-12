@@ -5,7 +5,10 @@
           → 按部位算蒙皮权重（头发跟头、裙摆跟大腿、四肢两段骨骼）
           → 生成眨眼用的眼睑贴片 → 导出 GLB + 关节信息 JSON
 
-用法：python build_character.py <raw.glb> <视图目录> <输出目录> <名字> [--faces 60000] [--tex 2048] [--debug 目录]
+用法：python build_character.py <raw.glb> <视图目录> <输出目录> <名字> [--faces 60000] [--tex 2048] [--debug 目录] [--measure]
+
+每个角色的关键尺寸和服装类型写在 chars/<名字>.json 里。新角色先加 --measure 跑一遍，
+对着 debug 目录里的 0_measure.png（带刻度的正 / 侧视图）把尺寸量出来，再正式跑。
 """
 import argparse
 import json
@@ -17,7 +20,7 @@ import trimesh
 from scipy.spatial import cKDTree
 from scipy.sparse import coo_matrix, diags
 
-from meshkit import VIEWS, preview, project, raster, sample, view_axes
+from meshkit import VIEWS, preview, project, raster, sample, view_axes  # noqa: F401
 
 REF_H = 1.2  # 参考身高（米），与 src/character/rig.ts 的 REFERENCE_HEIGHT 一致
 
@@ -29,6 +32,8 @@ ap.add_argument('name')
 ap.add_argument('--faces', type=int, default=60000)
 ap.add_argument('--tex', type=int, default=2048)
 ap.add_argument('--debug', default=None)
+ap.add_argument('--config', default=None, help='角色的关键尺寸，默认 chars/<名字>.json')
+ap.add_argument('--measure', action='store_true', help='只做对齐和初步上色，输出带刻度的正 / 侧视图（量尺寸用），然后退出')
 args = ap.parse_args()
 dbg = Path(args.debug) if args.debug else None
 if dbg:
@@ -70,13 +75,23 @@ def remove_clip(view):
 
 
 views_dir = Path(args.views)
+# 侧视图只画了一边：脸朝右 = 角色自己的右侧。另一边用镜像补
+SIDE = 'right' if (views_dir / 'side_right.png').exists() else 'left'
+OTHER = 'left' if SIDE == 'right' else 'right'
 REF = {
     'front': load_view(views_dir / 'front.png'),
     'back': load_view(views_dir / 'back.png'),
-    'right': load_view(views_dir / 'side_right.png'),
-    'left': load_view(views_dir / 'side_right.png', mirror=True),
+    SIDE: load_view(views_dir / f'side_{SIDE}.png'),
+    OTHER: load_view(views_dir / f'side_{SIDE}.png', mirror=True),
 }
-remove_clip(REF['left'])
+
+cfg_path = Path(args.config) if args.config else Path(__file__).parent / 'chars' / f'{args.name}.json'
+K = json.loads(cfg_path.read_text(encoding='utf8')) if cfg_path.exists() else {}
+if not K and not args.measure:
+    raise SystemExit(f'缺少角色配置 {cfg_path}；新角色请先加 --measure 量尺寸')
+OUTFIT = K.get('outfit', 'dress')
+if K.get('clip_box'):
+    remove_clip(REF[OTHER])
 for v in REF.values():
     # 采样时避开剪影最外圈的描边：把 alpha 往里收
     v['inner'] = cv2.erode(v['alpha'], np.ones((17, 17), np.uint8)).astype(np.float32) / 255.0
@@ -113,7 +128,7 @@ sub = F0[:: max(1, len(F0) // 40000)]
 best = None
 for yaw in (0, 90, 180, 270):
     Vr = V0 @ rot_y(yaw).T
-    score = silhouette_iou(Vr, sub, 'front') + silhouette_iou(Vr, sub, 'right') + silhouette_iou(Vr, sub, 'back')
+    score = silhouette_iou(Vr, sub, 'front') + silhouette_iou(Vr, sub, SIDE) + silhouette_iou(Vr, sub, 'back')
     print(f'  yaw {yaw}: silhouette score {score:.3f}')
     if best is None or score > best[0]:
         best = (score, yaw)
@@ -176,7 +191,7 @@ class Projector:
             col = sample(REF[name]['rgb'], ipx)
             inner = sample(REF[name]['inner'], ipx)[:, 0]
             w = np.clip(Nrm @ d, 0, 1) ** power * visible * (inner > 0.97)
-            if name == 'left':
+            if name == OTHER:
                 w *= 0.999  # 镜像出来的视图，同等条件下让位给真实视图
             acc += col * w[:, None]
             wsum += w
@@ -216,37 +231,45 @@ def smoothstep(a, b, x):
     return t * t * (3 - 2 * t)
 
 
-# 角色的关键尺寸（参考身高 1.2 米；从正 / 侧视图量出来的）。换角色时改这里。
-K = dict(
-    hem_y=0.195,          # 裙摆下沿
-    hip_y=0.25,           # 胯关节高度（= rig.ts 的 REF_HIP_HEIGHT）
-    knee_y=0.14,
-    hip_x=0.065,
-    leg_z=0.0,
-    neck_y=0.68,          # 颈部枢轴
-    shoulder=(0.14, 0.585, -0.03),
-    hand=(0.265, 0.30, -0.035),
-    upper_arm=0.14,       # 肩到肘
-    sleeve_t=0.42,        # 袖口在整条手臂上的位置（0 肩 → 1 手）
-    arm_bind_roll=0.22,   # 走位代码里手臂自然下垂时的外张角（agent.ts），绑定时让这个角度正好对应建模姿势
-    eye=(0.103, 0.858), eye_r=(0.07, 0.074),
-    face_box=(-0.2, 0.2, 0.715, 0.99, 0.06),  # x0, x1, y0, y1, 最小 z
-    print_box=(-0.11, 0.12, 0.42, 0.63),
-    ear_box=(0.19, 0.76, 0.93, -0.16, 0.06),  # |x| 下限, y0, y1, z0, z1
-    clip_box=(-0.3, -0.115, 0.9, 1.06),   # 音符发卡所在范围（她的右侧额角）：x0, x1, y0, y1
-)
-
 proj = Projector(V, F)
-for name in ('front', 'right', 'back'):
+for name in ('front', SIDE, 'back'):
     print(f'  silhouette IoU {name}: {silhouette_iou(V, F, name):.3f}')
 vcol, vok = proj.shade(V, N)
 vcol = fill_nearest(V, vcol, vok)
 A = adjacency(len(V), F)
 
+if args.measure:
+    # 带刻度的正视图 + 侧视图（脸朝右），每格 0.1 米
+    fc = vcol[F].mean(1)
+    R_, b_ = 1000, (-0.45, 0.45, -0.02, 1.24)
+    tiles = []
+    for name in ('front', 'right'):
+        axes = view_axes(name=name)
+        W_ = int(R_ * 0.9 / 1.26)
+        ids_, _, _ = raster(V, F, axes, (W_, R_), b_)
+        img = np.full((R_, W_, 3), 255, np.uint8)
+        img[ids_ >= 0] = fc[ids_[ids_ >= 0]].astype(np.uint8)
+        for g in np.arange(0, 1.21, 0.1):
+            yy = int((b_[3] - g) / (b_[3] - b_[2]) * R_)
+            cv2.line(img, (0, yy), (W_, yy), (0, 120, 255), 1)
+            cv2.putText(img, f'{g:.1f}', (2, yy - 2), 0, 0.4, (0, 0, 255), 1)
+        for g in np.arange(-0.4, 0.41, 0.1):
+            xx = int((g - b_[0]) / (b_[1] - b_[0]) * W_)
+            cv2.line(img, (xx, 0), (xx, R_), (0, 200, 0), 1)
+            cv2.putText(img, f'{g:.1f}', (xx + 2, 12), 0, 0.4, (0, 120, 0), 1)
+        tiles.append(img)
+    out_dir = dbg or Path('.')
+    cv2.imwrite(str(out_dir / '0_measure.png'), cv2.cvtColor(np.concatenate(tiles, 1), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(str(out_dir / '0_shape.png'), preview(V, F, None, yaws=(0, 40, 90, 180, 270), size=640, pitch=5))
+    print('measure image written to', out_dir / '0_measure.png')
+    raise SystemExit(0)
+
 # ───────── 4. 把脸磨平 ─────────
 # 建模工具会把大眼睛做成凹进去的眼窝、鼻子做成小鼓包；Q 版的脸应该是一张光滑的面，五官靠贴图。
 fb = K['face_box']
 is_hair_v = lum(vcol) < 115
+if not K.get('long_hair', False):
+    is_hair_v &= V[:, 1] > K['neck_y'] - 0.03   # 短发只在头上；身上的深色是衣服
 for _ in range(2):
     is_hair_v = (A @ is_hair_v.astype(float)) > 0.5
 face_v = (~is_hair_v) & (V[:, 0] > fb[0]) & (V[:, 0] < fb[1]) & (V[:, 1] > fb[2]) & (V[:, 1] < fb[3]) & (V[:, 2] > fb[4])
@@ -261,6 +284,8 @@ proj = Projector(V, F)
 vcol, vok = proj.shade(V, N)
 vcol = fill_nearest(V, vcol, vok)
 is_hair_v = lum(vcol) < 115
+if not K.get('long_hair', False):
+    is_hair_v &= V[:, 1] > K['neck_y'] - 0.03   # 短发只在头上；身上的深色是衣服
 for _ in range(2):
     is_hair_v = (A @ is_hair_v.astype(float)) > 0.5
 save_dbg('1_vertex_color.png', preview(V, F, vcol[F].mean(1), size=420))
@@ -275,6 +300,9 @@ hair = is_hair_v.astype(float)
 # 手臂：离「肩 → 手」这条线足够近、且不是头发的顶点
 arm_w = {}
 arm_t = np.zeros(len(V))
+# 有的角色手插在兜里、手臂和身体长在一起（见配置的 arms）：那一侧不单独蒙皮，整条手臂跟着上身；
+# 但「哪里是手臂」仍然要算出来（arm_geo），贴图分类要用
+arm_geo = np.zeros(len(V))
 for side, sgn in (('L', 1), ('R', -1)):
     S = np.array(K['shoulder']) * [sgn, 1, 1]
     Hd = np.array(K['hand']) * [sgn, 1, 1]
@@ -284,17 +312,21 @@ for side, sgn in (('L', 1), ('R', -1)):
     t = (V - S) @ ax
     dist = np.linalg.norm(V - S - np.clip(t, 0, L)[:, None] * ax, axis=1)
     tn = np.clip(t / L, 0, 1.15)
-    r_in = 0.04 + 0.022 * (1 - tn)      # 袖子处略粗
+    r_in = 0.04 + 0.022 * (1 - tn) + K.get('hand_extra_r', 0.0) * smoothstep(0.75, 1.0, tn)   # 袖子处略粗；手掌可再放宽
     w = smoothstep(r_in + 0.018, r_in, dist) * smoothstep(-0.08, 0.02, t / L) * (t / L < 1.25)
-    # 手臂贴着裙子侧面：轴线内侧只取 3 厘米，免得把裙子侧面也带着一起摆
+    # 手臂贴着身体侧面：轴线内侧只取 3 厘米，免得把身体侧面也算进来
     axis_x = S[0] + (Hd[0] - S[0]) * np.clip((S[1] - y) / (S[1] - Hd[1]), 0, 1.2)
     w *= smoothstep(-0.04, -0.02, sgn * (x - axis_x))
-    # 搭在手臂上的发丝和手臂在网格上是连着的：让它们半跟着手臂动，手臂前摆时接缝处不会被扯出洞
-    w *= 1 - 0.45 * hair
-    # 肩头留给上身：从肩到袖子中段逐渐过渡到手臂
-    w *= 0.25 + 0.75 * smoothstep(0.0, 0.3, t / L)
-    arm_w[side] = w
+    arm_geo = np.maximum(arm_geo, w)
     arm_t = np.where(w > 0.3, tn, arm_t)
+    if side not in K.get('arms', ['L', 'R']):
+        arm_w[side] = np.zeros(len(V))
+        continue
+    # 搭在手臂上的发丝和手臂在网格上是连着的：让它们半跟着手臂动，手臂前摆时接缝处不会被扯出洞
+    w = w * (1 - 0.45 * hair)
+    # 肩头留给上身：从肩到袖子中段逐渐过渡到手臂
+    w = w * (0.25 + 0.75 * smoothstep(0.0, 0.3, t / L))
+    arm_w[side] = w
     te = K['upper_arm'] / L
     fore = smoothstep(te - 0.12, te + 0.12, t / L)
     W[:, J['arm' + side]] = w * (1 - fore)
@@ -304,10 +336,11 @@ rest = 1 - arm_any
 
 # 腿：裙摆以下、靠近腿轴线
 leg_any = np.zeros(len(V))
+leg_top = K['hem_y'] if OUTFIT == 'dress' else K['crotch_y']   # 腿从哪里开始单独动：裙摆下沿 / 裤裆
 for side, sgn in (('L', 1), ('R', -1)):
     d = np.hypot(x - sgn * K['hip_x'], z - K['leg_z'])
-    near = np.maximum(smoothstep(0.1, 0.075, d), smoothstep(K['hem_y'] - 0.015, K['hem_y'] - 0.03, y))  # 裙摆以下全是腿脚
-    w = near * smoothstep(K['hem_y'] + 0.035, K['hem_y'] - 0.01, y) * smoothstep(-0.006, 0.006, sgn * x) * (1 - hair * (y > K['hem_y'])) * rest
+    near = np.maximum(smoothstep(0.1, 0.075, d), smoothstep(leg_top - 0.015, leg_top - 0.03, y))  # 再往下全是腿脚
+    w = near * smoothstep(leg_top + 0.035, leg_top - 0.01, y) * smoothstep(-0.006, 0.006, sgn * x) * (1 - hair * (y > leg_top)) * rest
     shin = smoothstep(K['knee_y'] + 0.025, K['knee_y'] - 0.025, y)
     W[:, J['leg' + side]] += w * (1 - shin)
     W[:, J['shin' + side]] += w * shin
@@ -317,12 +350,12 @@ rest = rest * (1 - np.clip(leg_any, 0, 1))
 # 头：颈部以上全部；垂到肩以下的头发越往下越跟着上身
 head = smoothstep(K['neck_y'] - 0.02, K['neck_y'] + 0.035, y)
 hair_follow = 1 - 0.7 * smoothstep(K['neck_y'], 0.32, y)   # 发梢 30% 跟头、70% 跟上身
-head_w = np.where(is_hair_v, np.maximum(head, hair_follow), head)
+head_w = np.where(is_hair_v, np.maximum(head, hair_follow), head) if K.get('long_hair', False) else head
 W[:, J['head']] = head_w * rest
 rest = rest * (1 - head_w)
 
 # 裙摆：越靠下越跟大腿（坐下时前片搭在腿上），后片跟得少一些；头发不参与
-skirt = smoothstep(0.42, 0.23, y) * (1 - hair)
+skirt = smoothstep(0.42, 0.23, y) * (1 - hair) * (OUTFIT == 'dress')
 frontness = smoothstep(-0.1, 0.06, z)
 thigh_amt = skirt * (0.35 + 0.5 * frontness)
 wl = smoothstep(-0.05, 0.05, x)
@@ -391,6 +424,7 @@ Nt = interp(N2)
 Nt /= np.linalg.norm(Nt, axis=1, keepdims=True) + 1e-12
 Wt = interp(W[vmap])
 arm_t_tex = interp(arm_t[vmap])
+arm_geo_tex = interp(arm_geo[vmap])
 
 raw, ok = proj.shade(P, Nt)
 raw = fill_nearest(P, raw, ok)
@@ -416,43 +450,85 @@ def single_view(name, min_facing=0.15):
 front_col, front_vis = single_view('front')
 right_col, right_vis = single_view('right', 0.05)
 
-# —— 按部位贴标签：0 头发 1 皮肤 2 裙子 3 发卡 ——
-fbx0 = K['face_box']
-HAIR, SKIN, DRESS, CLIP = 0, 1, 2, 3
+# —— 按部位贴标签（标签表随服装类型不同） ——
+HAIR, SKIN = 0, 1
 rg = raw[:, 0] - raw[:, 1]
 w_head = Wt[:, J['head']]
 w_leg = Wt[:, [J['legL'], J['shinL'], J['legR'], J['shinR']]].sum(1)
 w_shin = Wt[:, [J['shinL'], J['shinR']]].sum(1)
 w_arm = Wt[:, [J['armL'], J['foreL'], J['armR'], J['foreR']]].sum(1)
-label = np.full(len(P), DRESS, np.uint8)
-on_head = P[:, 1] > K['neck_y'] + 0.02
-label[on_head] = np.where(rg[on_head] > 30, SKIN, CLIP)
-cb = K['clip_box']
-in_clip = on_head & (P[:, 0] > cb[0]) & (P[:, 0] < cb[1]) & (P[:, 1] > cb[2]) & (P[:, 1] < cb[3])
+fbx0 = K['face_box']
 eb = K['ear_box']
+on_head = P[:, 1] > K['neck_y'] + 0.02
 in_face = (P[:, 0] > fbx0[0]) & (P[:, 0] < fbx0[1]) & (P[:, 1] < fbx0[3]) & (P[:, 2] > 0.02)
 in_ear = (np.abs(P[:, 0]) > eb[0]) & (P[:, 1] > eb[1]) & (P[:, 1] < eb[2]) & (P[:, 2] > eb[3]) & (P[:, 2] < eb[4])
-# 头上只有三处不是头发：脸、耳朵、发卡。其余一律按头发处理（建模和原画对不齐时，浅色会漏到头发上）
-label[on_head] = np.where((in_clip & right_vis & (lum(right_col) > 150))[on_head], CLIP, np.where((in_face | in_ear)[on_head], SKIN, HAIR))
-label[(~on_head) & (P[:, 1] > K['neck_y'] - 0.035) & (rg > 38)] = SKIN  # 脖子
-label[(w_arm > 0.5) & (arm_t_tex > K['sleeve_t'])] = SKIN             # 袖口以下的手臂和手
-label[(P[:, 1] < K['hem_y'] - 0.004) & ((w_shin > 0.2) | (w_leg > 0.75))] = SKIN  # 腿、脚
-# 头发：颜色够深，并且附近的顶点也是头发（排除描边线、指缝线这些深色细线）；四肢上不会有头发
-hair_prior = interp((A @ (A @ (A @ is_hair_v.astype(float))))[vmap])
-label[(lum(raw) < 115) & (hair_prior > 0.2) & (w_arm < 0.6) & (w_leg < 0.6)] = HAIR
-label[(P[:, 1] < K['hem_y'] - 0.02)] = SKIN                           # 裙摆以下没有头发
+pb = K['print_box']
+in_print = (P[:, 0] > pb[0]) & (P[:, 0] < pb[1]) & (P[:, 1] > pb[2]) & (P[:, 1] < pb[3]) & (P[:, 2] > 0)
+
+if OUTFIT == 'dress':
+    # 0 头发 1 皮肤 2 裙子 3 发卡
+    DRESS, CLIP = 2, 3
+    LABELS = ['hair', 'skin', 'dress', 'clip']
+    ROUGH = [0.5, 0.62, 0.9, 0.45]
+    DARK = {HAIR}
+    PRINT_ON = DRESS
+    label = np.full(len(P), DRESS, np.uint8)
+    cb = K['clip_box']
+    in_clip = on_head & (P[:, 0] > cb[0]) & (P[:, 0] < cb[1]) & (P[:, 1] > cb[2]) & (P[:, 1] < cb[3])
+    # 头上只有三处不是头发：脸、耳朵、发卡。其余一律按头发处理（建模和原画对不齐时，浅色会漏到头发上）
+    label[on_head] = np.where((in_clip & right_vis & (lum(right_col) > 150))[on_head], CLIP, np.where((in_face | in_ear)[on_head], SKIN, HAIR))
+    label[(~on_head) & (P[:, 1] > K['neck_y'] - 0.035) & (rg > 38)] = SKIN  # 脖子
+    label[(w_arm > 0.5) & (arm_t_tex > K['sleeve_t'])] = SKIN             # 袖口以下的手臂和手
+    label[(P[:, 1] < K['hem_y'] - 0.004) & ((w_shin > 0.2) | (w_leg > 0.75))] = SKIN  # 腿、脚
+    # 头发：颜色够深，并且附近的顶点也是头发（排除描边线、指缝线这些深色细线）；四肢上不会有头发
+    hair_prior = interp((A @ (A @ (A @ is_hair_v.astype(float))))[vmap])
+    label[(lum(raw) < 115) & (hair_prior > 0.2) & (w_arm < 0.6) & (w_leg < 0.6)] = HAIR
+    label[(P[:, 1] < K['hem_y'] - 0.02)] = SKIN                           # 裙摆以下没有头发
+else:
+    # T 恤 + 短裤 + 袜子：0 头发 1 皮肤 2 上衣 3 短裤 4 袜子
+    SHIRT, SHORTS, SOCKS = 2, 3, 4
+    LABELS = ['hair', 'skin', 'shirt', 'shorts', 'socks']
+    ROUGH = [0.5, 0.62, 0.9, 0.85, 0.95]
+    DARK = {HAIR, SHORTS}
+    PRINT_ON = SHIRT
+    yy = P[:, 1]
+    dark = lum(raw) < 120
+    skinish = (rg > 16) & ~dark
+    below_sleeve = arm_t_tex > K['sleeve_t']
+    label = np.full(len(P), SHIRT, np.uint8)
+    # 手臂：袖口以下是皮肤。几何上确定是手臂的直接算；手臂边缘再参考颜色
+    label[(arm_geo_tex > 0.5) & below_sleeve] = SKIN
+    label[(arm_geo_tex > 0.15) & (arm_t_tex > K['sleeve_t'] - 0.04) & skinish] = SKIN
+    label[(arm_geo_tex > 0.15) & (arm_t_tex > 0.8) & ~dark] = SKIN        # 手掌：建模的手和原画位置对不齐，只要不是深色都算皮肤
+    if 'hand_x_min' in K:  # 垂在短裤两侧的手：比身体侧面更靠外、上衣下摆附近的浅色
+        label[(np.abs(P[:, 0]) > K['hand_x_min']) & (yy < K['waist_y'] + 0.04) & (yy > K['hem_y']) & ~dark] = SKIN
+    label[in_print] = SHIRT
+    label[dark & (yy < K['waist_y'] + 0.06) & (arm_geo_tex < 0.5)] = SHORTS   # 上衣下摆以下的深色是短裤（更高处的深色只会是描边线）
+    label[(yy < K['hem_y']) & (w_leg > 0.5)] = SKIN         # 裤脚以下是腿
+    label[yy < K['sock_y']] = SOCKS
+    # 脖子：领口以上、头以下（下巴底下三个视图都看不到，不能靠颜色）
+    neck_r = np.hypot(P[:, 0], P[:, 2] - K.get('neck_z', -0.02))
+    label[(~on_head) & (yy > K['neck_y'] - 0.03) & (neck_r < K.get('neck_r', 0.075))] = SKIN
+    label[(~on_head) & (yy > K['neck_y'] - 0.06) & (neck_r < K.get('neck_r', 0.075) + 0.02) & skinish] = SKIN
+    # 头：脸和耳朵是皮肤，其余是头发。脸的范围里也有刘海、耳朵范围里也有鬓角：原画上是深色的算头发，
+    # 眼睛和镜片范围除外（瞳孔、眉毛、镜框也是深色，那里直接用原画）
+    ex_, ey_ = K['eye']
+    in_lens = (((np.abs(P[:, 0]) - ex_) / (K['eye_r'][0] * 1.5)) ** 2 + ((P[:, 1] - ey_) / (K['eye_r'][1] * 1.4)) ** 2 < 1) & (P[:, 2] > 0.05)
+    label[on_head] = np.where((in_face | in_ear)[on_head], SKIN, HAIR)
+    label[on_head & dark & ~in_lens] = HAIR
+    label[on_head & in_face & front_vis & (lum(front_col) < 105) & ~in_lens & (P[:, 1] > ey_ + K['eye_r'][1] * 0.6)] = HAIR
 
 # 在贴图空间里做「多数表决」去掉零碎斑点和描边细线
 lab_img = np.full((T, T), 255, np.uint8)
 lab_img[ty, tx] = label
 valid = (lab_img != 255).astype(np.float32)
 votes = []
-for k in range(4):
+for k in range(len(LABELS)):
     votes.append(cv2.blur((lab_img == k).astype(np.float32), (9, 9)))
 label = np.argmax(np.stack(votes, -1), -1)[ty, tx].astype(np.uint8)
 
-palette = np.zeros((4, 3), np.float32)
-for k in range(4):
+palette = np.zeros((len(LABELS), 3), np.float32)
+for k in range(len(LABELS)):
     m = label == k
     if m.sum() < 50:
         palette[k] = (255, 0, 255)
@@ -460,9 +536,9 @@ for k in range(4):
     c = raw[m]
     L = lum(c)
     # 取该部位「典型」的颜色：头发取偏暗的一半，其余取偏亮的一半（避开描边和混色）
-    sel = L <= np.median(L) if k == HAIR else L >= np.median(L)
+    sel = L <= np.median(L) if k in DARK else L >= np.median(L)
     palette[k] = np.median(c[sel], axis=0)
-print('palette', {n: palette[i].round().tolist() for i, n in enumerate(['hair', 'skin', 'dress', 'clip'])})
+print('palette', {n: palette[i].round().tolist() for i, n in enumerate(LABELS)})
 palette[HAIR] = np.maximum(palette[HAIR], [40, 35, 36])  # 纯黑在光照下看不出体积，略提一点
 color = palette[label].copy()
 
@@ -470,10 +546,13 @@ color = palette[label].copy()
 fbx = K['face_box']
 face_t = front_vis & (label == SKIN) & (P[:, 0] > fbx[0]) & (P[:, 0] < fbx[1]) & (P[:, 1] > fbx[2] - 0.03) & (P[:, 1] < fbx[3]) & (P[:, 2] > 0.0)
 color[face_t] = front_col[face_t]
-# 胸前印花：正面、胸口范围内偏黄的像素用原画
-pb = K['print_box']
-print_t = front_vis & (label == DRESS) & (P[:, 0] > pb[0]) & (P[:, 0] < pb[1]) & (P[:, 1] > pb[2]) & (P[:, 1] < pb[3]) \
-    & ((front_col[:, 0] - front_col[:, 2]) > 72) & (lum(front_col) > 150)
+# 胸前印花：正面、胸口范围内与衣服底色明显不同的像素用原画
+base = palette[PRINT_ON]
+if OUTFIT == 'dress':
+    differs = ((front_col[:, 0] - front_col[:, 2]) > 72) & (lum(front_col) > 150)
+else:
+    differs = np.linalg.norm(front_col - base, axis=1) > 22
+print_t = front_vis & (label == PRINT_ON) & in_print & differs
 color[print_t] = front_col[print_t]
 print('face texels', int(face_t.sum()), 'print texels', int(print_t.sum()))
 
@@ -485,8 +564,8 @@ lut = np.zeros((lbl.max() + 1, 3), np.float32)
 lut[lbl[ty, tx]] = color
 tex = lut[lbl]
 tex_u8 = np.clip(tex, 0, 255).astype(np.uint8)
-# 粗糙度贴图（glTF 约定：G 通道 = 粗糙度，B 通道 = 金属度）：头发略有光泽，皮肤柔和，裙子哑光
-rough_of = np.array([0.5, 0.62, 0.9, 0.45], np.float32)
+# 粗糙度贴图（glTF 约定：G 通道 = 粗糙度，B 通道 = 金属度）：头发略有光泽，皮肤柔和，衣服哑光
+rough_of = np.array(ROUGH, np.float32)
 lut_r = np.zeros(lbl.max() + 1, np.float32)
 lut_r[lbl[ty, tx]] = rough_of[label]
 rough_img = np.zeros((T, T, 3), np.uint8)
@@ -581,7 +660,7 @@ rig = dict(
     armRestAngle=K['arm_bind_roll'],
     # 肘关节在上臂骨骼局部坐标里的位置（左臂；右臂 x 取反）：建模姿势的手臂比绑定姿势更外张 d_roll
     elbow=[round(float(np.sin(d_roll) * K['upper_arm']), 4), round(float(-np.cos(d_roll) * K['upper_arm']), 4), 0],
-    source=dict(tool='Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, hunyuan3d-dit-v2-mv-turbo)', reference='assets/xiaoxiao_q_turnaround.jpg',
+    source=dict(tool='Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, hunyuan3d-dit-v2-mv-turbo)', reference=f'assets/{args.name}_q_turnaround.jpg',
                 vertices=int(len(V2)), faces=int(len(F2)), texture=int(T)),
 )
 (out / f'{args.name}.rig.json').write_text(json.dumps(rig, ensure_ascii=False, indent=2) + '\n', encoding='utf8')

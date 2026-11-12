@@ -5,7 +5,7 @@
 
 用法：python gen_shape.py <视图目录> <输出.glb> [--steps 5] [--octree 256] [--full] [--mirror-left]
   --full         用非蒸馏模型（hunyuan3d-dit-v2-mv，建议 30 步以上，CPU 上很慢）
-  --mirror-left  把右侧视图镜像后当作左侧视图一并输入（角色左右基本对称时可提高一致性）
+  --mirror-left  把侧视图镜像后当作另一侧的视图一并输入（角色左右基本对称时可提高一致性）
 """
 import argparse
 import time
@@ -30,14 +30,16 @@ args = ap.parse_args()
 
 views = Path(args.views)
 # Hunyuan3D-2mv 的视图约定：left = 从正面顺时针转 90°（角色脸朝画面左），right = 转 270°（脸朝画面右）。
-# 我们的侧视图脸朝右，所以是 right。
+# prepare_views.py 按侧视图里脸的朝向把文件命名为 side_left.png / side_right.png，这里直接对应。
+side = 'right' if (views / 'side_right.png').exists() else 'left'
+other = 'left' if side == 'right' else 'right'
 images = {
     'front': Image.open(views / 'front.png').convert('RGBA'),
     'back': Image.open(views / 'back.png').convert('RGBA'),
-    'right': Image.open(views / 'side_right.png').convert('RGBA'),
+    side: Image.open(views / f'side_{side}.png').convert('RGBA'),
 }
 if args.mirror_left:
-    images['left'] = ImageOps.mirror(images['right'])
+    images[other] = ImageOps.mirror(images[side])
 
 torch.set_num_threads(torch.get_num_threads())
 t0 = time.time()
