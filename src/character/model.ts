@@ -15,6 +15,7 @@ import { createBareRig, REF_SHIN, REF_THIGH, REF_UPPER_ARM, type CharacterRig, t
 import { dressTexture, faceTextures, hairTexture } from './textures';
 import { profileLength, smoothLathe, smoothstep, spherePoint, taperedTube } from './geom';
 import { buildPlaceholder } from './placeholder';
+import { buildGltfCharacter } from './gltfModel';
 
 const HEAD_R = 0.205;
 const HEAD_CENTER_Y = 0.2; // 相对 head 枢轴（脖子顶）
@@ -346,6 +347,12 @@ function addSeatedSkirtMorph(geo: THREE.BufferGeometry) {
 
 export function buildCharacter(spec: CharacterSpec): CharacterRig {
   if (spec.model_type === 'placeholder') return buildPlaceholder(spec);
+  if (spec.model_type === 'gltf') {
+    // 外部建模的角色；模型文件缺失或未预加载时退回程序化形象
+    const rig = buildGltfCharacter(spec);
+    if (rig) return rig;
+    console.warn(`[character] ${spec.id} 的 gltf 模型不可用（${spec.model}），改用程序化形象`);
+  }
   const rig = createBareRig(spec.id, spec.height);
   const skinMat = lambert(spec.palette.skin ?? '#f8e1d4', { roughness: ROUGH.skin });
   buildHead(rig, spec, skinMat);

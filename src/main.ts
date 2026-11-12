@@ -10,6 +10,7 @@ import { WallFader } from './scene/wallFade';
 import { indexAnchors } from './scene/anchors';
 import { Pathfinder, furnitureObstacles, wallObstacles } from './nav/pathfinder';
 import { buildCharacter } from './character/model';
+import { preloadGltfCharacter } from './character/gltfModel';
 import { CharacterAgent, type LogFn } from './character/agent';
 import { ContactShadow } from './character/contactShadow';
 import { createHud, showConfigErrors } from './ui/hud';
@@ -262,13 +263,18 @@ function boot(cfg: AppConfig) {
   }
 }
 
-try {
-  boot(loadConfig());
-} catch (e) {
-  if (e instanceof ConfigError) {
-    console.error(e.message);
-    showConfigErrors(app, e.issues);
-  } else {
-    throw e;
+(async () => {
+  try {
+    const cfg = loadConfig();
+    const active = cfg.characters.characters.find((c) => c.id === cfg.characters.active);
+    if (active) await preloadGltfCharacter(active);
+    boot(cfg);
+  } catch (e) {
+    if (e instanceof ConfigError) {
+      console.error(e.message);
+      showConfigErrors(app, e.issues);
+    } else {
+      throw e;
+    }
   }
-}
+})();

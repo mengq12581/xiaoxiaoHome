@@ -5,8 +5,8 @@
       "id": "xiaoxiao",
       "name": "笑笑",
       "height": 1.2,
-      "model": "assets/xiaoxiao_q_turnaround.jpg",
-      "model_type": "procedural",
+      "model": "assets/models/xiaoxiao.glb",
+      "model_type": "gltf",
       "spawn": [2.65, 2.2],
       "palette": {
         "hair": "#17161b",

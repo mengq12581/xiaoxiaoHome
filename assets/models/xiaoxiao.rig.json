@@ -1,0 +1,36 @@
+{
+  "joints": [
+    "body",
+    "torso",
+    "head",
+    "armL",
+    "foreL",
+    "armR",
+    "foreR",
+    "legL",
+    "shinL",
+    "legR",
+    "shinR"
+  ],
+  "neckY": 0.68,
+  "hipX": 0.065,
+  "shoulder": [
+    0.14,
+    0.585,
+    -0.03
+  ],
+  "upperArm": 0.14,
+  "armRestAngle": 0.22,
+  "elbow": [
+    0.0269,
+    -0.1374,
+    0
+  ],
+  "source": {
+    "tool": "Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, hunyuan3d-dit-v2-mv-turbo)",
+    "reference": "assets/xiaoxiao_q_turnaround.jpg",
+    "vertices": 39324,
+    "faces": 59918,
+    "texture": 2048
+  }
+}
