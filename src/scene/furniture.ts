@@ -1,23 +1,27 @@
 // 程序化家具模型。局部坐标：x 右、y 上、-z 为家具正面（人使用的一侧），原点在占地中心的地面上。
 // 尺寸取自 furniture.json 的 size = [宽, 深, 高]。
-// 观感：所有块都带圆角 / 倒角（桌角、床角、柜角不尖）；材质只有哑光木、织物、暖白三类，不用高光金属、不描线。
+// 观感：所有块都是大圆角的软体块（硬质件圆角到 4 厘米、布艺件到 9 厘米，像捏出来的）；
+// 材质只有哑光木、织物、暖白三类（PBR，无金属），不描线。
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { FurnitureItem } from '../config/types';
 import { P } from './house';
+import { ROUGH, soft } from './materials';
 import { fabricTexture, hashString, seeded, woodGrainTexture } from './textures';
 
 type Finish = 'wood' | 'fabric' | 'paint';
 
-const matCache = new Map<string, THREE.MeshLambertMaterial>();
-function mat(color: number, finish: Finish = 'paint', emissive = 0x000000, emissiveIntensity = 1): THREE.MeshLambertMaterial {
+const matCache = new Map<string, THREE.MeshStandardMaterial>();
+function mat(color: number, finish: Finish = 'paint', emissive = 0x000000, emissiveIntensity = 1): THREE.MeshStandardMaterial {
   const key = `${color}:${finish}:${emissive}:${emissiveIntensity}`;
   let m = matCache.get(key);
   if (!m) {
-    m = new THREE.MeshLambertMaterial({
-      color,
+    m = soft(color, {
       map: finish === 'wood' ? woodGrainTexture() : finish === 'fabric' ? fabricTexture() : null,
+      roughness: ROUGH[finish],
+      // 深色件（屏幕、椅脚）少吃环境反光，否则俯视时发灰
+      envMapIntensity: color === C.screenBody || color === C.screen || color === C.charcoal ? 0.4 : 1,
       emissive,
       emissiveIntensity,
     });
@@ -47,10 +51,14 @@ const C = {
 
 class Builder {
   constructor(public g: THREE.Group) {}
-  /** 圆角盒：圆角半径取最短边的 40%，上限 2 厘米 */
+  /**
+   * 软圆角盒。圆角半径 = 最短边的 45%，上限按材质：布艺 9 厘米（靠垫、床垫鼓起来），木与漆面 4 厘米。
+   * 薄板（门板、书）自然退化成小圆边。
+   */
   box(w: number, h: number, d: number, color: number, x: number, y: number, z: number, finish: Finish = 'paint', name?: string, m?: THREE.Material) {
-    const r = Math.min(0.02, Math.min(w, h, d) * 0.4);
-    const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, r), m ?? mat(color, finish));
+    const cap = finish === 'fabric' ? 0.09 : 0.04;
+    const r = Math.min(cap, Math.min(w, h, d) * 0.45);
+    const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, r > 0.03 ? 6 : 4, r), m ?? mat(color, finish));
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -58,7 +66,7 @@ class Builder {
     this.g.add(mesh);
     return mesh;
   }
-  cyl(rt: number, rb: number, h: number, color: number, x: number, y: number, z: number, finish: Finish = 'paint', seg = 20, m?: THREE.Material) {
+  cyl(rt: number, rb: number, h: number, color: number, x: number, y: number, z: number, finish: Finish = 'paint', seg = 32, m?: THREE.Material) {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m ?? mat(color, finish));
     mesh.position.set(x, y, z);
     mesh.castShadow = true;

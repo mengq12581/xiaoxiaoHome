@@ -8,6 +8,7 @@
 // 尺寸单位：米（1.2 米参考身高），局部 +Z 为正面。帅帅的占位形象在 placeholder.ts，不受这里影响。
 
 import * as THREE from 'three';
+import { ROUGH, soft, type SoftParams } from '../scene/materials';
 import { ParametricGeometry } from 'three/examples/jsm/geometries/ParametricGeometry.js';
 import type { CharacterSpec } from '../config/types';
 import { createBareRig, REF_SHIN, REF_THIGH, REF_UPPER_ARM, type CharacterRig, type EyeState } from './rig';
@@ -18,8 +19,8 @@ import { buildPlaceholder } from './placeholder';
 const HEAD_R = 0.205;
 const HEAD_CENTER_Y = 0.2; // 相对 head 枢轴（脖子顶）
 
-function lambert(color: string | number | THREE.Color, opts: THREE.MeshLambertMaterialParameters = {}) {
-  return new THREE.MeshLambertMaterial({ color, ...opts });
+function lambert(color: string | number | THREE.Color, opts: SoftParams = {}) {
+  return soft(color, { roughness: ROUGH.cloth, ...opts });
 }
 
 function add(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, name?: string) {
@@ -44,7 +45,7 @@ function buildHead(rig: CharacterRig, spec: CharacterSpec, skinMat: THREE.Materi
     kind: 'girl',
     headRadius: HEAD_R,
   });
-  const faceMat = lambert('#ffffff', { map: faces.open });
+  const faceMat = lambert('#ffffff', { map: faces.open, roughness: ROUGH.skin });
   const head = add(rig.head, new THREE.SphereGeometry(HEAD_R, 64, 40), faceMat, 0, HEAD_CENTER_Y, 0, 'face');
   head.scale.set(1, 0.97, 1);
   const byState: Record<EyeState, THREE.Texture> = { 0: faces.open, 1: faces.half, 2: faces.closed };
@@ -62,7 +63,7 @@ function buildHead(rig: CharacterRig, spec: CharacterSpec, skinMat: THREE.Materi
 
 function buildHair(rig: CharacterRig, spec: CharacterSpec) {
   const base = spec.palette.hair ?? '#17161b';
-  const hairMat = lambert('#ffffff', { map: hairTexture(base, 3), side: THREE.DoubleSide });
+  const hairMat = lambert('#ffffff', { map: hairTexture(base, 3), side: THREE.DoubleSide, roughness: ROUGH.hair, envMapIntensity: 0.45 });
   const cy = HEAD_CENTER_Y;
   const front = Math.PI / 2;
 
@@ -130,7 +131,7 @@ function buildHair(rig: CharacterRig, spec: CharacterSpec) {
   }
 
   // 音符发卡：正面看左侧（-X），在耳朵上方，有厚度
-  const clipMat = lambert(spec.palette.hair_clip ?? '#f7f0e3');
+  const clipMat = lambert(spec.palette.hair_clip ?? '#f7f0e3', { roughness: ROUGH.paint });
   const headShape = new THREE.Shape();
   headShape.absellipse(0, 0, 0.021, 0.0155, 0, Math.PI * 2, false, -0.38);
   const stem = new THREE.Shape();
@@ -346,7 +347,7 @@ function addSeatedSkirtMorph(geo: THREE.BufferGeometry) {
 export function buildCharacter(spec: CharacterSpec): CharacterRig {
   if (spec.model_type === 'placeholder') return buildPlaceholder(spec);
   const rig = createBareRig(spec.id, spec.height);
-  const skinMat = lambert(spec.palette.skin ?? '#f8e1d4');
+  const skinMat = lambert(spec.palette.skin ?? '#f8e1d4', { roughness: ROUGH.skin });
   buildHead(rig, spec, skinMat);
   buildHair(rig, spec);
   buildBody(rig, spec, skinMat);

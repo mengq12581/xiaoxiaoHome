@@ -7,7 +7,7 @@
   "startAzimuthDeg": 225,
   "startPolarDeg": 55,
   "startDistance": 12,
-  "wallFadeOpacity": 0.15,
+  "wallFadeOpacity": 0.08,
   "wallFadeWithOutline": true,
   "wallFadeTarget": "character_or_room_center"
 }

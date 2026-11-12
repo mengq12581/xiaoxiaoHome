@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { RoomsConfig } from '../config/types';
 import { computeWallLayout, normBounds, wallPieces, type Opening, type WallSegment } from './layout';
+import { ROUGH, soft } from './materials';
 import { FLOOR_TEXTURE_METERS, floorTexture } from './textures';
 
 /** 平面 (x, y) + 高度 → 世界坐标 */
@@ -13,7 +14,7 @@ export interface WallView {
   segment: WallSegment;
   group: THREE.Group;
   meshes: THREE.Mesh[];
-  material: THREE.MeshLambertMaterial;
+  material: THREE.MeshStandardMaterial;
   edges: THREE.LineSegments;
   edgeMaterial: THREE.LineBasicMaterial;
   /** 当前不透明度（渐变中） */
@@ -24,6 +25,8 @@ export interface HouseView {
   root: THREE.Group;
   walls: WallView[];
   floors: THREE.Mesh[];
+  /** 窗玻璃（不参与环境光遮蔽） */
+  glass: THREE.Object3D[];
   /** 每个房间的中心点（世界坐标，离地 0.6m） */
   roomCenters: { roomId: string; point: THREE.Vector3 }[];
   /** 每个房间地面上的采样点（约 1m 一个，贴墙内缩 0.35m，离地 0.5m），用于墙体遮挡检测 */
@@ -34,7 +37,7 @@ export interface HouseView {
 }
 
 const WALL_COLOR = 0xe6d7c3;
-const WALL_EDGE_COLOR = 0x5e5146;
+const WALL_EDGE_COLOR = 0x9c8975;
 const TRIM_COLOR = 0xf8f4ee;
 const FRAME_COLOR = 0xd9c2a3;
 
@@ -51,7 +54,7 @@ function wallBox(seg: Pick<WallSegment, 'orient' | 'c'>, s: number, e: number, y
 function buildWall(seg: WallSegment, thickness: number): WallView {
   const group = new THREE.Group();
   group.name = `wall:${seg.id}`;
-  const material = new THREE.MeshLambertMaterial({ color: WALL_COLOR, transparent: true, opacity: 1 });
+  const material = soft(WALL_COLOR, { roughness: ROUGH.wall, transparent: true, opacity: 1 });
   const edgeMaterial = new THREE.LineBasicMaterial({ color: WALL_EDGE_COLOR, transparent: true, opacity: 0.85 });
   const meshes: THREE.Mesh[] = [];
   const edgeGeos: THREE.BufferGeometry[] = [];
@@ -89,9 +92,9 @@ function mergeLineGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry
   return out;
 }
 
-const trimMat = new THREE.MeshLambertMaterial({ color: TRIM_COLOR });
-const frameMat = new THREE.MeshLambertMaterial({ color: FRAME_COLOR });
-const glassMat = new THREE.MeshLambertMaterial({ color: 0xbfdcec, transparent: true, opacity: 0.32, depthWrite: false });
+const trimMat = soft(TRIM_COLOR, { roughness: ROUGH.trim });
+const frameMat = soft(FRAME_COLOR, { roughness: ROUGH.wood });
+const glassMat = soft(0xcfe6f2, { roughness: 0.15, transparent: true, opacity: 0.28, depthWrite: false });
 
 /** 与 wallBox 同尺寸的圆角盒（门窗框用，边角不尖） */
 function roundedWallBox(seg: Pick<WallSegment, 'orient' | 'c'>, s: number, e: number, y0: number, y1: number, t: number, radius = 0.012) {
@@ -182,6 +185,7 @@ function buildWindow(op: Opening, thickness: number): THREE.Group {
   const glass = new THREE.Mesh(geo, glassMat);
   glass.position.copy(pos);
   glass.renderOrder = 1;
+  glass.name = 'glass';
   g.add(glass);
   // 窗台板
   if (op.bottom > 0.3) {
@@ -211,7 +215,7 @@ export function buildHouse(cfg: RoomsConfig): HouseView {
     const tex = floorTexture(room.floor).clone();
     tex.needsUpdate = true;
     tex.repeat.set(w / FLOOR_TEXTURE_METERS, d / FLOOR_TEXTURE_METERS);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), new THREE.MeshLambertMaterial({ map: tex }));
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), soft(0xffffff, { map: tex, roughness: ROUGH.floor }));
     floor.position.copy(P((b.x0 + b.x1) / 2, -0.03, (b.y0 + b.y1) / 2));
     floor.receiveShadow = true;
     floor.name = `floor:${room.id}`;
@@ -244,5 +248,10 @@ export function buildHouse(cfg: RoomsConfig): HouseView {
   box.max.y = Math.max(box.max.y, wallHeight);
   box.expandByVector(new THREE.Vector3(T / 2, 0, T / 2));
 
-  return { root, walls, floors, roomCenters, roomSamples, box, wallHeight };
+  const glass: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    if (o.name === 'glass') glass.push(o);
+  });
+
+  return { root, walls, floors, glass, roomCenters, roomSamples, box, wallHeight };
 }

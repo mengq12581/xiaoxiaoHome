@@ -5,6 +5,7 @@ import type { AppConfig, Vec2 } from './config/types';
 import { buildHouse, P } from './scene/house';
 import { buildFurniture } from './scene/furniture';
 import { CameraRig } from './scene/cameraRig';
+import { createPipeline, createRenderer, setupLighting } from './scene/lookdev';
 import { WallFader } from './scene/wallFade';
 import { indexAnchors } from './scene/anchors';
 import { Pathfinder, furnitureObstacles, wallObstacles } from './nav/pathfinder';
@@ -17,16 +18,9 @@ import { createDevPanel } from './ui/devPanel';
 const app = document.getElementById('app')!;
 
 function boot(cfg: AppConfig) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(app.clientWidth, app.clientHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  app.appendChild(renderer.domElement);
+  const renderer = createRenderer(app);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf1ebe2);
 
   // 房子
   const house = buildHouse(cfg.rooms);
@@ -36,35 +30,10 @@ function boot(cfg: AppConfig) {
   const furniture = cfg.furniture.items.map(buildFurniture);
   for (const f of furniture) scene.add(f.group);
 
-  // 地台
+  // 背景、环境光照、主光、地台（风格基线见 scene/lookdev.ts）
   const center = house.box.getCenter(new THREE.Vector3());
   const radius = house.box.getSize(new THREE.Vector3()).setY(0).length() / 2;
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * 1.6, 64),
-    new THREE.MeshLambertMaterial({ color: 0xe6ddd0 }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(center.x, -0.065, center.z);
-  // 墙不投影，屋外地台也不接影子，否则家具影子会「穿墙」落到屋外
-  ground.receiveShadow = false;
-  scene.add(ground);
-
-  // 光：天光 + 一盏投影主光
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0xb9a893, 1.7));
-  const sun = new THREE.DirectionalLight(0xfff0dc, 1.6);
-  // 主光从左前上方来：远处墙面背光略暗，空间层次清楚（墙体与门窗框不投影，见 house.ts）
-  sun.position.set(center.x - 4, 10, center.z + 6);
-  sun.target.position.copy(center);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -radius - 1;
-  sc.right = sc.top = radius + 1;
-  sc.near = 1;
-  sc.far = 30;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.02;
-  scene.add(sun, sun.target);
+  setupLighting(renderer, scene, center, radius);
 
   // 角色（v0.1 只有一个 active 角色）
   const spec = cfg.characters.characters.find((c) => c.id === cfg.characters.active)!;
@@ -109,11 +78,19 @@ function boot(cfg: AppConfig) {
     P(agent.position[0], 0.35 * character.scale, agent.position[1]),
   ];
 
+  // 后期：正在透明的墙、玻璃、贴地影子不参与环境光遮蔽
+  const pipeline = createPipeline(renderer, scene, rig.camera, () => [
+    ...house.walls.filter((w) => w.opacity < 0.98).map((w) => w.group),
+    ...house.glass,
+    contact.group,
+  ]);
+
   const hud = createHud(app, 'v0.1 · M2 角色与走位');
   hud.onReset(() => rig.reset());
 
   const onResize = () => {
     renderer.setSize(app.clientWidth, app.clientHeight);
+    pipeline.setSize(app.clientWidth, app.clientHeight);
     rig.resize(app.clientWidth, app.clientHeight);
   };
   window.addEventListener('resize', onResize);
@@ -165,7 +142,8 @@ function boot(cfg: AppConfig) {
     syncPathLine();
     rig.update();
     fader.update(rig.camera, fadeTargets(), dt);
-    renderer.render(scene, rig.camera);
+    pipeline.render();
+    pipeline.reportFrame(dt);
   };
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.1);
@@ -202,6 +180,7 @@ function boot(cfg: AppConfig) {
       scene,
       rig,
       fader,
+      pipeline,
       renderer,
       agent,
       anchors,
@@ -271,9 +250,9 @@ function boot(cfg: AppConfig) {
       },
       async capture(name: string) {
         // 等所有着色器编译就绪再截（Chrome 并行编译时，未就绪的物体那一帧会被跳过）
-        renderer.render(scene, rig.camera);
+        pipeline.render();
         await renderer.compileAsync(scene, rig.camera);
-        renderer.render(scene, rig.camera);
+        pipeline.render();
         const data = renderer.domElement.toDataURL('image/png');
         const res = await fetch(`/__dev/screenshot?name=${encodeURIComponent(name)}`, { method: 'POST', body: data });
         return res.json();
