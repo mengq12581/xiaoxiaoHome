@@ -1,5 +1,9 @@
 // 程序化家具模型。局部坐标：x 右、y 上、-z 为家具正面（人使用的一侧），原点在占地中心的地面上。
 // 尺寸取自 furniture.json 的 size = [宽, 深, 高]。
+// 道具约定（由 scene/props.ts 按名字接管，平时的样子就是这里建出来的样子）：
+//   prop:<名字>  活动需要时才出现的东西（翻开的本子、盖在身上的被子、碗）
+//   hide:<名字>  该道具出现时要藏起来的东西（合上的本子）
+//   glow:<名字>  该道具「出现」时发光的面（电脑屏幕、电视屏幕）
 // 观感：所有块都是大圆角的软体块（硬质件圆角到 4 厘米、布艺件到 9 厘米，像捏出来的）；
 // 材质只有哑光木、织物、暖白三类（PBR，无金属），不描线。
 
@@ -111,6 +115,12 @@ const MODELS: Record<string, ModelFn> = {
     legs(b, w, d, h - 0.05, 0.06, 0.05, C.woodDark);
     b.box(w - 0.14, 0.025, d - 0.14, C.woodLight, 0, 0.13, 0, 'wood');
     b.cyl(0.035, 0.03, 0.09, 0xf6f1ea, w * 0.22, h + 0.045, d * 0.1);
+    // 碗（吃饭时才出现）
+    const bowl = new THREE.Group();
+    bowl.name = 'prop:bowl';
+    bowl.position.set(-w * 0.12, h, -d * 0.12);
+    new Builder(bowl).cyl(0.07, 0.04, 0.06, 0xf3ede3, 0, 0.03, 0);
+    b.g.add(bowl);
   },
 
   tv_stand(b, w, d, h) {
@@ -123,7 +133,7 @@ const MODELS: Record<string, ModelFn> = {
     b.box(0.07, 0.09, 0.04, C.screenBody, 0, h + 0.045, 0.04);
     const ty = h + 0.09 + sh / 2;
     b.box(sw, sh, 0.045, C.screenBody, 0, ty, 0.04, 'paint', 'tv_body');
-    b.box(sw - 0.04, sh - 0.04, 0.004, C.screen, 0, ty, 0.04 - 0.024, 'paint', 'tv_screen', mat(C.screen, 'paint', 0x0e141c));
+    b.box(sw - 0.04, sh - 0.04, 0.004, C.screen, 0, ty, 0.04 - 0.024, 'paint', 'glow:tv_glow', mat(C.screen, 'paint', 0x0e141c));
   },
 
   desk(b, w, d, h) {
@@ -135,13 +145,23 @@ const MODELS: Record<string, ModelFn> = {
     b.box(0.2, 0.014, 0.14, C.screenBody, 0, h + 0.007, mz);
     b.box(0.05, 0.13, 0.035, C.screenBody, 0, h + 0.065, mz + 0.01);
     b.box(0.58, 0.34, 0.03, C.screenBody, 0, h + 0.13 + 0.17, mz - 0.01, 'paint', 'monitor');
-    b.box(0.54, 0.3, 0.004, C.screen, 0, h + 0.3, mz - 0.026, 'paint', 'monitor_screen', mat(C.screen, 'paint', 0x0e141c));
-    // 键盘、鼠标
-    b.box(0.42, 0.02, 0.13, 0xece8e2, -0.02, h + 0.01, -d / 2 + 0.2, 'paint', 'keyboard');
-    b.box(0.05, 0.022, 0.08, 0xece8e2, 0.3, h + 0.011, -d / 2 + 0.2);
-    // 本子（合上的；写笔记时翻开）
-    b.box(0.21, 0.016, 0.28, 0xc97b63, w / 2 - 0.26, h + 0.008, -d / 2 + 0.22, 'fabric', 'notebook');
-    b.box(0.2, 0.005, 0.27, 0xfaf6ee, w / 2 - 0.255, h + 0.012, -d / 2 + 0.22);
+    b.box(0.54, 0.3, 0.004, C.screen, 0, h + 0.3, mz - 0.026, 'paint', 'glow:screen_glow', mat(C.screen, 'paint', 0x0e141c));
+    // 键盘、鼠标（靠里放，桌子前沿留给本子）
+    b.box(0.42, 0.02, 0.13, 0xece8e2, -0.02, h + 0.01, -d / 2 + 0.31, 'paint', 'keyboard');
+    b.box(0.05, 0.022, 0.08, 0xece8e2, 0.3, h + 0.011, -d / 2 + 0.31);
+    // 本子：平时合着放在桌角；写笔记时换成摊开在面前的那本
+    b.box(0.21, 0.016, 0.28, 0xc97b63, w / 2 - 0.26, h + 0.008, -d / 2 + 0.22, 'fabric', 'hide:notebook_open');
+    b.box(0.2, 0.005, 0.27, 0xfaf6ee, w / 2 - 0.255, h + 0.012, -d / 2 + 0.22, 'paint', 'hide:notebook_open');
+    const open = new THREE.Group();
+    open.name = 'prop:notebook_open';
+    open.position.set(0.02, h, -d / 2 + 0.13);
+    const ob = new Builder(open);
+    ob.box(0.4, 0.008, 0.26, 0xc97b63, 0, 0.004, 0, 'fabric');
+    for (const sx of [-1, 1]) ob.box(0.185, 0.008, 0.24, 0xfaf6ee, sx * 0.097, 0.011, 0);
+    ob.box(0.006, 0.01, 0.24, 0xd9d2c4, 0, 0.012, 0);
+    // 几行字
+    for (let i = 0; i < 4; i++) ob.box(0.13, 0.002, 0.008, 0xb9b2a6, -0.097, 0.0155, -0.08 + i * 0.035);
+    b.g.add(open);
     // 笔筒
     b.cyl(0.035, 0.035, 0.1, 0x9fb7c6, -w / 2 + 0.16, h + 0.05, d / 2 - 0.12);
   },
@@ -194,7 +214,7 @@ const MODELS: Record<string, ModelFn> = {
     }
   },
 
-  bed(b, w, d, h) {
+  bed(b, w, d, h, item) {
     // 正面（-z）是床尾，床头在 +z
     const legH = 0.06;
     legs(b, w, d, legH, 0.06, 0.06, C.woodDark);
@@ -207,6 +227,22 @@ const MODELS: Record<string, ModelFn> = {
     const blanketD = d * 0.62;
     b.box(w - 0.02, 0.06, blanketD, C.blanket, 0, mattressTop + 0.03, -d / 2 + 0.05 + blanketD / 2, 'fabric', 'blanket');
     b.box(w - 0.02, 0.066, 0.14, C.blanketFold, 0, mattressTop + 0.033, -d / 2 + 0.05 + blanketD - 0.07, 'fabric');
+    // 盖在身上的被子（睡觉时才鼓起来）：位置跟着「躺」的交互点走，从脚盖到胸口
+    const lie = item.anchors.find((a) => a.id === 'bed_lie');
+    if (lie) {
+      const cover = new THREE.Group();
+      cover.name = 'prop:blanket_cover';
+      // 交互点局部 [右, 前]：前 = 家具正面 = -z
+      cover.position.set(lie.local[0], mattressTop - 0.03, -lie.local[1] - 0.14);
+      // 一团鼓起的被子：压扁的椭球，下半埋在床垫里
+      const bump = new THREE.Mesh(new THREE.SphereGeometry(0.5, 40, 24), mat(C.blanket, 'fabric'));
+      bump.scale.set(0.8, 0.5, 0.92);
+      bump.position.y = 0.06;
+      bump.castShadow = true;
+      bump.receiveShadow = true;
+      cover.add(bump);
+      b.g.add(cover);
+    }
   },
 
   nightstand(b, w, d, h) {

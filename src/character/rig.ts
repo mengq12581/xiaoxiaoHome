@@ -48,6 +48,8 @@ export interface CharacterRig {
   setEyes(state: EyeState): void;
   /** 坐姿权重 0～1：裙摆从站姿形变为坐姿（盖在大腿上） */
   setSitBlend(k: number): void;
+  /** 戴耳机的位置（head 局部坐标，参考尺寸）：左耳中心 [x, y, z] 与头顶高度 */
+  headphones: { ear: [number, number, number]; top: number };
 }
 
 /** 关节位置覆盖（参考尺寸，米）。从外部模型量出来的肩、颈、腿位置与默认骨架不同时用 */
@@ -60,6 +62,9 @@ export interface RigLayout {
   upperArm?: number;
   /** 左胯关节的 x，右侧取镜像 */
   hipX?: number;
+  /** 左耳中心 [x, 离地高度, z] 与头顶（含头发）离地高度：戴耳机用 */
+  ear?: [number, number, number];
+  headTop?: number;
 }
 
 /** 只有关节、没有网格的骨架（单测与占位用） */
@@ -125,5 +130,10 @@ export function createBareRig(id: string, height = REFERENCE_HEIGHT, layout: Rig
     id,
     setEyes: () => {},
     setSitBlend: () => {},
+    headphones: (() => {
+      const neck = layout.neckY ?? REF_HIP_HEIGHT + 0.385;
+      const e = layout.ear ?? [0.215, neck + 0.19, -0.01];
+      return { ear: [e[0], e[1] - neck, e[2]] as [number, number, number], top: (layout.headTop ?? neck + 0.425) - neck };
+    })(),
   };
 }

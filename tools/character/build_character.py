@@ -658,6 +658,9 @@ rig = dict(
     shoulder=list(K['shoulder']),
     upperArm=K['upper_arm'],
     armRestAngle=K['arm_bind_roll'],
+    # 戴耳机用：左耳中心与头顶（含头发）高度
+    ear=K.get('ear', [K['ear_box'][0] + 0.03, (K['ear_box'][1] + K['ear_box'][2]) / 2, (K['ear_box'][3] + K['ear_box'][4]) / 2]),
+    headTop=REF_H + 0.012,
     # 肘关节在上臂骨骼局部坐标里的位置（左臂；右臂 x 取反）：建模姿势的手臂比绑定姿势更外张 d_roll
     elbow=[round(float(np.sin(d_roll) * K['upper_arm']), 4), round(float(-np.cos(d_roll) * K['upper_arm']), 4), 0],
     source=dict(tool='Hunyuan3D-2mv (tencent/Hunyuan3D-2mv, hunyuan3d-dit-v2-mv-turbo)', reference=f'assets/{args.name}_q_turnaround.jpg',

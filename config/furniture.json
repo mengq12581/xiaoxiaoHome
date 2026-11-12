@@ -85,7 +85,7 @@
       "rotation": 180,
       "size": [1.5, 2.0, 0.5],
       "draggable": true,
-      "anchors": [{ "id": "bed_lie", "local": [0, -0.3, 0.55], "facing": "forward", "approach": [1.3, -0.3], "activity": "sleep" }],
+      "anchors": [{ "id": "bed_lie", "local": [0, 0.15, 0.55], "facing": "forward", "approach": [1.3, 0.15], "activity": "sleep" }],
       "group": null
     },
     {

@@ -3,6 +3,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { CONFIG_FILES, type ConfigKey } from './src/config/types';
 import { formatIssues, validateAll, type ConfigIssue } from './src/config/validate';
+import { startStateServer, type RunningServer } from './server/stateServer';
 
 const root = __dirname;
 
@@ -89,8 +90,39 @@ function devScreenshots(): Plugin {
   };
 }
 
+/**
+ * 状态服务：随开发服务器 / 预览服务器一起启动（独立端口 4317，给模拟器和任务脚本用），
+ * 同时把 /state、/history、/activities、/log 挂在页面同源下，前端不用关心实际端口。
+ */
+function stateService(): Plugin {
+  let running: Promise<RunningServer> | null = null;
+  const start = () =>
+    (running ??= startStateServer({
+      root,
+      port: Number(process.env.XH_STATE_PORT ?? 4317),
+      loadActivities: () => JSON.parse(readFileSync(resolve(root, 'config/activities.json'), 'utf8')).activities,
+    }));
+  const mount = (server: { middlewares: ViteDevServer['middlewares']; httpServer: ViteDevServer['httpServer'] }) => {
+    const ready = start();
+    server.middlewares.use((req, res, next) => {
+      ready.then((s) => s.handler(req, res)).then((handled) => !handled && next(), next);
+    });
+    server.httpServer?.once('close', () => {
+      void ready.then((s) => s.close());
+      running = null;
+    });
+  };
+  // 跑单测时 Vitest 也会加载这份配置，不能顺手把服务起起来
+  if (process.env.VITEST) return { name: 'xiaoxiao-state-service' };
+  return {
+    name: 'xiaoxiao-state-service',
+    configureServer: mount,
+    configurePreviewServer: mount,
+  };
+}
+
 export default defineConfig({
-  plugins: [configGuard(), devScreenshots()],
+  plugins: [configGuard(), devScreenshots(), stateService()],
   server: {
     host: '127.0.0.1',
     port: 5173,

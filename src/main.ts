@@ -15,10 +15,18 @@ import { CharacterAgent, type LogFn } from './character/agent';
 import { ContactShadow } from './character/contactShadow';
 import { createHud, showConfigErrors } from './ui/hud';
 import { createDevPanel } from './ui/devPanel';
+import { Director } from './director/director';
+import { StagePerformer } from './director/stagePerformer';
+import { PropManager, buildHeadphones } from './scene/props';
+import { FrontendLog, StateClient } from './state/client';
 
 const app = document.getElementById('app')!;
 
 function boot(cfg: AppConfig) {
+  // 日志：控制台 + 经状态服务落盘到 logs/frontend-YYYYMMDD.log
+  const flog = new FrontendLog();
+  flog.start();
+
   const renderer = createRenderer(app);
 
   const scene = new THREE.Scene();
@@ -47,14 +55,12 @@ function boot(cfg: AppConfig) {
     ...furnitureObstacles(cfg.furniture.items),
   ]);
   if (pathfinder.blockedNodes.length || pathfinder.blockedEdges.length) {
-    console.warn('[nav] 以下导航点/边被墙或家具挡住，已停用', {
+    flog.write('warn', '[nav] 以下导航点/边被墙或家具挡住，已停用', {
       nodes: pathfinder.blockedNodes,
       edges: pathfinder.blockedEdges,
     });
   }
-  const log: LogFn = (level, msg, data) => {
-    (level === 'warn' ? console.warn : console.info)(`[agent:${spec.id}] ${msg}`, data ?? '');
-  };
+  const log: LogFn = (level, msg, data) => flog.write(level, `[agent:${spec.id}] ${msg}`, data);
   const spawn: Vec2 = spec.spawn ?? cfg.rooms.nav.nodes[0];
   const agent = new CharacterAgent(character, pathfinder, spawn, -90, { log });
   const anchors = indexAnchors(cfg.furniture.items);
@@ -63,6 +69,38 @@ function boot(cfg: AppConfig) {
   const syncContact = () =>
     contact.update(agent.position, character.root.rotation.y, agent.sitWeight, agent.seatHeight);
   syncContact();
+
+  // 道具（屏幕微光、翻开的本子、被子、耳机……）
+  buildHeadphones(character);
+  const props = new PropManager([...furniture.map((f) => f.group), character.root]);
+
+  // 导演：状态 → 排队 / 最短停留 → 演员（走过去、就位、动作、道具）
+  const directorClock = { t: 0 };
+  const performer = new StagePerformer(agent, pathfinder, () => anchors, () => cfg.rooms.nav.nodes, props, log);
+  const client = new StateClient({
+    onState: (state) => {
+      const decision = director.setState(cfg.characters.active, state);
+      flog.write('info', '[state] 收到状态', { activity: state.activity, source: state.source, since: state.since, decision });
+    },
+    onStatus: (ok, detail) => flog.write(ok ? 'info' : 'warn', ok ? '[state] 状态服务已连接' : '[state] 状态服务连不上，保持上一次有效状态', { detail }),
+  });
+  const director = new Director(cfg.activities, {
+    now: () => directorClock.t,
+    log: (level, msg, data) => flog.write(level, `[director] ${msg}`, data),
+    onPerformed: (_id, ended, next) =>
+      client.reportPerformed({
+        activity: next.activity,
+        source: next.source,
+        min_dwell: next.minDwell,
+        prev: ended.activity,
+        prev_duration: ended.totalSec,
+        prev_acted: ended.actedSec,
+        prev_min_dwell: ended.minDwell,
+      }),
+  });
+  // 多角色接口：v0.1 只登记并路由给 active 角色
+  director.register(spec.id, performer, true);
+  client.start();
 
   // 墙体遮挡检测用 matrixWorld 做射线；首帧渲染前就要算好，否则第一次检测全打偏
   scene.updateMatrixWorld(true);
@@ -86,7 +124,7 @@ function boot(cfg: AppConfig) {
     contact.group,
   ]);
 
-  const hud = createHud(app, 'v0.1 · M2 角色与走位');
+  const hud = createHud(app, 'v0.1 · M3 导演与状态');
   hud.onReset(() => rig.reset());
 
   const onResize = () => {
@@ -117,17 +155,22 @@ function boot(cfg: AppConfig) {
     pathLine.computeLineDistances();
   };
 
-  const seat = (key: string) => anchors.seats.get(key)!;
-  const stand = (key: string) => anchors.stands.get(key)!;
+  // 开发态：状态模拟面板（等同于模拟器点按钮：把状态写给状态服务，再由轮询读回来交给导演）
+  const send = (activity: string, source = 'sim:click') =>
+    client.post({ activity, source }).then((r) => {
+      if (r.status !== 200) flog.write('warn', `[state] 写入被拒绝（HTTP ${r.status}）`, { activity, body: r.body as Record<string, unknown> });
+    });
   const devPanel = import.meta.env.DEV
-    ? createDevPanel(app, 'M2 走位演示（开发态；M3 起由状态驱动）', [
-        { label: '走到卧室床边', run: () => agent.walkTo(seat('bed:bed_lie').approach) },
-        { label: '坐电脑椅', run: () => agent.sitAt(seat('desk:desk_seat')) },
-        { label: '坐沙发', run: () => agent.sitAt(seat('sofa:sofa_seat')) },
-        { label: '客厅窗边', run: () => { const s = stand('living_window_spot:window_stand'); agent.standAt(s.plan, s.headingDeg); } },
-        { label: '卧室窗边', run: () => { const s = stand('bedroom_window_spot:window_stand'); agent.standAt(s.plan, s.headingDeg); } },
-        { label: '站起来', run: () => agent.standUp() },
-        { label: '无解测试', run: () => agent.walkTo(cfg.furniture.items.find((i) => i.id === 'wardrobe')!.position) },
+    ? createDevPanel(app, '状态模拟（开发态；正式的模拟器在 M6）', [
+        { label: '用电脑', run: () => send('use_computer') },
+        { label: '写笔记', run: () => send('write_notes') },
+        { label: '沙发看电视', run: () => send('watch_tv') },
+        { label: '听歌', run: () => send('listen_music') },
+        { label: '床上睡觉', run: () => send('sleep') },
+        { label: '窗边发呆', run: () => send('daydream_window') },
+        { label: '闲逛', run: () => send('wander') },
+        { label: '停下', run: () => send('idle') },
+        { label: '非法活动(fly)', run: () => send('fly') },
         { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 55, cfg.camera.minDistance) },
       ])
     : null;
@@ -137,8 +180,16 @@ function boot(cfg: AppConfig) {
   let frames = 0;
   let fpsTime = 0;
   let fps = 0;
-  const renderFrame = (dt: number) => {
+  const stepWorld = (dt: number, realDt: number) => {
+    // 导演的时钟走真实时间（最短停留按秒算，不受掉帧影响）；动作步长封顶，避免切回标签页时一步迈太大
+    directorClock.t += realDt;
     agent.update(dt);
+    performer.update();
+    director.update();
+    props.update(dt);
+  };
+  const renderFrame = (dt: number, realDt: number) => {
+    stepWorld(dt, realDt);
     syncContact();
     syncPathLine();
     rig.update();
@@ -147,8 +198,9 @@ function boot(cfg: AppConfig) {
     pipeline.reportFrame(dt);
   };
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
-    renderFrame(dt);
+    const realDt = clock.getDelta();
+    const dt = Math.min(realDt, 0.1);
+    renderFrame(dt, realDt);
     frames++;
     fpsTime += dt;
     if (fpsTime >= 0.5) {
@@ -159,8 +211,12 @@ function boot(cfg: AppConfig) {
       hud.setStats(
         `${fps} fps · 方位 ${v.azimuthDeg.toFixed(0)}° · 俯仰 ${v.polarDeg.toFixed(0)}° · 距离 ${v.distance.toFixed(1)} m · 透明墙 ${fader.occluding.size}`,
       );
+      const d = director.snapshot();
+      const dwell = d.phase === 'ACTING' ? (d.dwellLeft > 0 ? `最短停留还剩 ${Math.ceil(d.dwellLeft)} 秒` : `已演 ${Math.floor(d.acted)} 秒`) : d.phase === 'MOVING' ? '正在过去' : '';
       devPanel?.setStatus(
-        `${spec.name}：${agent.state} · (${agent.position[0].toFixed(2)}, ${agent.position[1].toFixed(2)}) · ${agent.headingDeg.toFixed(0)}°`,
+        d.activity
+          ? `${spec.name}：${d.activity}（${d.source}）· ${dwell}${d.queued ? ` · 排队：${d.queued}` : ''} · ${agent.state}`
+          : `${spec.name}：还没有收到状态 · ${agent.state}`,
       );
     }
   });
@@ -187,6 +243,10 @@ function boot(cfg: AppConfig) {
       anchors,
       pathfinder,
       character,
+      director,
+      performer,
+      props,
+      client,
       setView: (az: number, polar: number, dist: number) => {
         rig.setView(az, polar, dist);
         // 跳过渐变，直接到位，便于截图
@@ -197,7 +257,7 @@ function boot(cfg: AppConfig) {
         const dt = 1 / 60;
         let t = 0;
         for (; t < seconds; t += dt) {
-          agent.update(dt);
+          stepWorld(dt, dt);
           if (until?.()) break;
         }
         syncContact();
