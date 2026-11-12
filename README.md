@@ -135,6 +135,7 @@ tools/character/  三视图 → 角色模型的建模流水线（Python，仅重
 
 | 日期 | 里程碑 | 能演示什么 | 截图 |
 | --- | --- | --- | --- |
+| 2026-11-12 | 帅帅三视图换版 | 按客户新版三视图替换 `assets/shuaishuai_q_turnaround.jpg`（双手下垂、不再插兜）；`shuaishuai.glb` 暂未按新图重建，画面仍是旧版帅帅，详见 docs/验收问题.md C9 | — |
 | 2026-11-11 | M1 场景与相机 | 按配置生成一室一厅（真实门洞、落地窗、卧室窗、11 件家具）；自由环绕 + 滚轮缩放；挡视线的墙自动透明留轮廓；改配置即生效，配置错误启动即报错 | `docs/screenshots/m1-01-default.png` 默认视角；`m1-02`～`m1-04` 另外三个方向；`m1-05-top` 俯视；`m1-06-far-low` 最远最低；`m1-07-near` 最近；`m1-08-sofa-moved` 改沙发坐标；`m1-09-room-added` 加房间 |
 | 2026-11-12 | M2 整改（笑笑形象、坐姿、待机、接触阴影、家具圆角与材质） | 按 docs/验收问题.md C4/C5 整改并复验 M2；帅帅占位不变 | `m2-b-turnaround` 新三视图；`m2-i-blink` 眨眼帧；`m2-h-seated-pose` 坐姿三视图；`m2-e-seated-sofa` 沙发上；`m2-d-seated-desk` 电脑椅上；`m2-a-front` 正面（脚下接触阴影）；`m2-j-door-fillet` 门洞圆角与木纹 |
 | 2026-11-11 | M2 角色与走位 | Q 版笑笑（三视图对照）；寻路穿门洞走到床边、不穿墙不穿家具；走到椅子后停住、转身、坐下；坐着换座位先起身；无解原地停 + 警告；拉近看清脸；占位帅帅可切换 | `m2-b-turnaround` 三视图；`m2-a-front` 屋内正面；`m2-c-walking` 走路中（虚线为路径）；`m2-c-at-bedside` 到床边；`m2-d-seated-desk` 坐电脑椅；`m2-e-seated-sofa` 坐沙发（最近距离看脸）；`m2-f-walking-stride` 走向窗边；`m2-g-placeholder-shuaishuai` 占位帅帅 |
