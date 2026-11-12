@@ -5,6 +5,9 @@
 
 用法：python gen_shape.py <视图目录> <输出.glb> [--steps 5] [--octree 256] [--full] [--mirror-left]
   --full         用非蒸馏模型（hunyuan3d-dit-v2-mv，建议 30 步以上，CPU 上很慢）
+  --device cuda  用显卡（默认 auto：有 CUDA 就用，没有用 CPU）
+  --fp32         显卡上用单精度（默认半精度省显存；GTX 16 系半精度可能算出 NaN，那时加这个，但需要约 6G 以上显存）
+  --offload      显存不够时，各部件轮流进显卡（4G 显存建议加）
   --mirror-left  把侧视图镜像后当作另一侧的视图一并输入（角色左右基本对称时可提高一致性）
 """
 import argparse
@@ -26,6 +29,9 @@ ap.add_argument('--guidance', type=float, default=5.0)
 ap.add_argument('--full', action='store_true')
 ap.add_argument('--mirror-left', action='store_true')
 ap.add_argument('--no-flashvdm', action='store_true')
+ap.add_argument('--device', default='auto', choices=['auto', 'cpu', 'cuda'])
+ap.add_argument('--fp32', action='store_true')
+ap.add_argument('--offload', action='store_true')
 args = ap.parse_args()
 
 views = Path(args.views)
@@ -41,19 +47,23 @@ images = {
 if args.mirror_left:
     images[other] = ImageOps.mirror(images[side])
 
-torch.set_num_threads(torch.get_num_threads())
+device = args.device if args.device != 'auto' else ('cuda' if torch.cuda.is_available() else 'cpu')
+dtype = torch.float32 if (device == 'cpu' or args.fp32) else torch.float16
+print(f'device={device} dtype={dtype}', flush=True)
 t0 = time.time()
 pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
     'tencent/Hunyuan3D-2mv',
     subfolder='hunyuan3d-dit-v2-mv' if args.full else 'hunyuan3d-dit-v2-mv-turbo',
     variant='fp16',
-    device='cpu',
-    dtype=torch.float32,
+    device=device,
+    dtype=dtype,
 )
 if not args.no_flashvdm:
     pipeline.enable_flashvdm()
-    # FlashVDM 会另外加载一个半精度（fp16）的解码器；CPU 上要转成 float32
-    pipeline.vae.to(device='cpu', dtype=torch.float32)
+    # FlashVDM 会另外加载一个半精度（fp16）的解码器；要和主模型用同一种精度
+    pipeline.vae.to(device=device, dtype=dtype)
+if args.offload and device == 'cuda':
+    pipeline.enable_model_cpu_offload()
 print(f'loaded in {time.time() - t0:.0f}s', flush=True)
 
 t0 = time.time()
@@ -67,4 +77,8 @@ mesh = pipeline(
     output_type='trimesh',
 )[0]
 print(f'generated in {time.time() - t0:.0f}s: {len(mesh.vertices)} verts, {len(mesh.faces)} faces', flush=True)
+import numpy as np
+
+if len(mesh.faces) == 0 or not np.isfinite(np.asarray(mesh.vertices)).all():
+    raise SystemExit('生成结果是空的或含 NaN：多半是这块显卡的半精度有问题，加 --fp32 重试；显存不够再加 --offload，或改用 --device cpu')
 mesh.export(args.out)

@@ -45,6 +45,19 @@ cd tools/character
 然后在 `config/characters.json` 里把角色的 `model` 指向 `assets/models/<id>.glb`、`model_type` 设为 `"gltf"`。
 想换回程序化小人，把 `model_type` 改回 `"procedural"` 即可（代码还在 `src/character/model.ts`）。
 
+## 用显卡跑（可选）
+
+`gen_shape.py` 默认有 CUDA 就用显卡。要先装带 CUDA 的 PyTorch（`pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`）。
+
+| 情况 | 参数 |
+| --- | --- |
+| 显存 8G 以上 | 不用加参数 |
+| 显存 4～6G（如 GTX 1650） | 加 `--offload` |
+| 结果是空的 / 报 NaN（GTX 16 系的半精度常见问题） | 再加 `--fp32`；仍然不行或爆显存就 `--device cpu` |
+
+显卡主要是快；画质的提升来自非蒸馏模型：`--full --steps 30 --octree 380`。这组参数在 CPU 上也能跑（约 1 小时、内存 12G 以上）。
+**以上显卡路径没有在真机上验证过**（生成这两个模型的机器没有显卡）。
+
 ## 第 3 步做了什么（build_character.py）
 
 1. **清理、摆正、归一**：只留最大连通块；绕竖轴试 4 个朝向，取剪影与三视图最吻合的；缩放到 1.2 米、脚踩地面。
