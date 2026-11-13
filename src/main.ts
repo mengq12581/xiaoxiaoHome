@@ -16,6 +16,8 @@ import { ContactShadow } from './character/contactShadow';
 import { createHud, showConfigErrors } from './ui/hud';
 import { createDevPanel } from './ui/devPanel';
 import { Director } from './director/director';
+import { IdlePool } from './director/idlePool';
+import { isoLocal } from './state/types';
 import { StagePerformer } from './director/stagePerformer';
 import { PropManager, buildHeadphones } from './scene/props';
 import { FrontendLog, StateClient } from './state/client';
@@ -84,7 +86,17 @@ function boot(cfg: AppConfig) {
     },
     onStatus: (ok, detail) => flog.write(ok ? 'info' : 'warn', ok ? '[state] 状态服务已连接' : '[state] 状态服务连不上，保持上一次有效状态', { detail }),
   });
+  // 空闲池：没人安排时按权重自己挑事做（只从这个角色能做的活动里挑）
+  const idlePool = new IdlePool(cfg.activities, { allowed: spec.activities });
   const director = new Director(cfg.activities, {
+    idlePool,
+    isoNow: () => isoLocal(new Date()),
+    // 自己挑的事写回状态服务（source = idle）：state.json、历史、以后的模拟器都能看到她在干什么
+    onIdlePick: (_id, state) => {
+      void client.post(state).catch(() => {
+        /* 服务不在也照常演 */
+      });
+    },
     now: () => directorClock.t,
     log: (level, msg, data) => flog.write(level, `[director] ${msg}`, data),
     onPerformed: (_id, ended, next) =>
@@ -124,7 +136,7 @@ function boot(cfg: AppConfig) {
     contact.group,
   ]);
 
-  const hud = createHud(app, 'v0.1 · M3 导演与状态');
+  const hud = createHud(app, 'v0.1 · M4 空闲池');
   hud.onReset(() => rig.reset());
 
   const onResize = () => {
@@ -160,6 +172,12 @@ function boot(cfg: AppConfig) {
     client.post({ activity, source }).then((r) => {
       if (r.status !== 200) flog.write('warn', `[state] 写入被拒绝（HTTP ${r.status}）`, { activity, body: r.body as Record<string, unknown> });
     });
+  // 开发态：快进（看空闲池换活动不用干等）。按 1/30 秒一步推进角色与导演，画面最后刷新一次
+  const fastForward = (seconds: number) => {
+    const dt = 1 / 30;
+    for (let t = 0; t < seconds; t += dt) stepWorld(dt, dt);
+    flog.write('info', `[dev] 快进 ${seconds} 秒`);
+  };
   const devPanel = import.meta.env.DEV
     ? createDevPanel(app, '状态模拟（开发态；正式的模拟器在 M6）', [
         { label: '用电脑', run: () => send('use_computer') },
@@ -169,7 +187,8 @@ function boot(cfg: AppConfig) {
         { label: '床上睡觉', run: () => send('sleep') },
         { label: '窗边发呆', run: () => send('daydream_window') },
         { label: '闲逛', run: () => send('wander') },
-        { label: '停下', run: () => send('idle') },
+        { label: '停下（回空闲池）', run: () => send('idle') },
+        { label: '快进 1 分钟', run: () => fastForward(60) },
         { label: '非法活动(fly)', run: () => send('fly') },
         { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 55, cfg.camera.minDistance) },
       ])
@@ -212,11 +231,26 @@ function boot(cfg: AppConfig) {
         `${fps} fps · 方位 ${v.azimuthDeg.toFixed(0)}° · 俯仰 ${v.polarDeg.toFixed(0)}° · 距离 ${v.distance.toFixed(1)} m · 透明墙 ${fader.occluding.size}`,
       );
       const d = director.snapshot();
-      const dwell = d.phase === 'ACTING' ? (d.dwellLeft > 0 ? `最短停留还剩 ${Math.ceil(d.dwellLeft)} 秒` : `已演 ${Math.floor(d.acted)} 秒`) : d.phase === 'MOVING' ? '正在过去' : '';
+      const next =
+        d.idleLeft !== null
+          ? `再过 ${Math.ceil(d.idleLeft)} 秒换下一件`
+          : d.idleIn !== null
+            ? d.idleIn > 0
+              ? `${Math.ceil(d.idleIn)} 秒后没新状态就进空闲池`
+              : '演满后进空闲池'
+            : '';
+      const dwell =
+        d.phase === 'ACTING'
+          ? d.dwellLeft > 0
+            ? `最短停留还剩 ${Math.ceil(d.dwellLeft)} 秒`
+            : next || `已演 ${Math.floor(d.acted)} 秒`
+          : d.phase === 'MOVING'
+            ? '正在过去'
+            : '';
       devPanel?.setStatus(
         d.activity
           ? `${spec.name}：${d.activity}（${d.source}）· ${dwell}${d.queued ? ` · 排队：${d.queued}` : ''} · ${agent.state}`
-          : `${spec.name}：还没有收到状态 · ${agent.state}`,
+          : `${spec.name}：还没有收到状态${d.idleIn !== null ? `，${Math.ceil(d.idleIn)} 秒后进空闲池` : ''} · ${agent.state}`,
       );
     }
   });

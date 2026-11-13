@@ -98,6 +98,8 @@ export interface ActivitiesConfig {
   activities: Record<string, ActivitySpec>;
   quiet_hours: [string, string];
   idle_after_sec: number;
+  /** 空闲池冷却：同一活动结束后多少秒内不再被挑中（默认 90） */
+  idle_cooldown_sec?: number;
   idle_pool_override?: Record<string, Record<string, number>>;
 }
 

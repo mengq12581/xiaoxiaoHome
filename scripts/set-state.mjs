@@ -5,6 +5,7 @@
 //   npm run state -- use_computer task:browsing 60     # 活动 来源 最短停留秒数
 //   npm run state -- --get                             # 看当前状态
 //   npm run state -- --history 10                      # 看最近 10 条
+//   npm run state -- --stats 20                        # 最近 20 分钟她做了哪些事（空闲池验收用）
 //
 // 端口默认 4317，可用环境变量 XH_STATE_PORT 指定。
 
@@ -27,6 +28,24 @@ async function main() {
   if (a0 === '--history') {
     const body = await (await fetch(`${base}/history?limit=${Number(a1) || 20}`)).json();
     for (const h of body.items) console.log(JSON.stringify(h));
+    return;
+  }
+  if (a0 === '--stats') {
+    const minutes = Number(a1) || 20;
+    const body = await (await fetch(`${base}/history?limit=500`)).json();
+    const since = Date.now() - minutes * 60_000;
+    const rows = body.items.filter((h) => (h.kind ?? 'state') === 'state' && Date.parse(h.ts) >= since);
+    const bySource = {};
+    for (const h of rows) {
+      const src = h.source === 'idle' ? '空闲池' : '外部写入';
+      bySource[src] ??= {};
+      bySource[src][h.activity] = (bySource[src][h.activity] ?? 0) + 1;
+    }
+    console.log(`最近 ${minutes} 分钟共 ${rows.length} 次状态变更`);
+    for (const [src, acts] of Object.entries(bySource)) {
+      const list = Object.entries(acts).sort((a, b) => b[1] - a[1]);
+      console.log(`  ${src}（${list.length} 种）：` + list.map(([a, n]) => `${a} ×${n}`).join('，'));
+    }
     return;
   }
   const state = { activity: a0, source: a1 ?? 'manual' };

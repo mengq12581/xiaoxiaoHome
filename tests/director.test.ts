@@ -186,13 +186,16 @@ describe('导演状态机', () => {
     expect(s.director.setState('xiaoxiao', s.st('watch_tv'))).toBe('started');
   });
 
-  it('长时间没有新状态：演满之后回落到兜底站姿（M4 起由空闲池接管）', () => {
+  it('没有空闲池时：超过 idle_after_sec 没有外部写入，演满之后原地站着', () => {
     const s = setup();
     s.director.setState('xiaoxiao', s.st('watch_tv'));
-    s.run(activities.idle_after_sec + 4);
+    s.run(activities.idle_after_sec - 1);
     expect(s.performer.last).toBe('watch_tv');
-    s.run(3);
+    s.run(2);
     expect(s.performer.last).toBe('idle_stand');
+    // 原地站着之后不会每帧反复「回落」
+    s.run(300);
+    expect(s.performer.begun).toHaveLength(2);
   });
 
   it('多角色接口：发给非 active 角色或未知活动的状态被忽略', () => {
