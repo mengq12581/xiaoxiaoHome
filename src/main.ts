@@ -3,68 +3,61 @@ import { loadConfig } from './config/load';
 import { ConfigError } from './config/validate';
 import type { AppConfig, Vec2 } from './config/types';
 import { buildHouse, P } from './scene/house';
-import { buildFurniture } from './scene/furniture';
+import { buildFurniture, placeFurniture } from './scene/furniture';
+import { DragController } from './scene/dragController';
+import { LayoutStore, type StorageLike } from './layout/layoutStore';
+import { StageLayout } from './layout/stageLayout';
 import { CameraRig } from './scene/cameraRig';
+import { createPipeline, createRenderer, setupLighting } from './scene/lookdev';
 import { WallFader } from './scene/wallFade';
 import { indexAnchors } from './scene/anchors';
 import { Pathfinder, furnitureObstacles, wallObstacles } from './nav/pathfinder';
 import { buildCharacter } from './character/model';
+import { preloadGltfCharacter } from './character/gltfModel';
 import { CharacterAgent, type LogFn } from './character/agent';
 import { ContactShadow } from './character/contactShadow';
-import { createHud, showConfigErrors } from './ui/hud';
+import { createHud, createLayoutBar, createToast, showConfigErrors } from './ui/hud';
 import { createDevPanel } from './ui/devPanel';
+import { Director } from './director/director';
+import { IdlePool } from './director/idlePool';
+import { isoLocal } from './state/types';
+import { StagePerformer } from './director/stagePerformer';
+import { PropManager, buildHeadphones } from './scene/props';
+import { FrontendLog, StateClient } from './state/client';
 
 const app = document.getElementById('app')!;
 
 function boot(cfg: AppConfig) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(app.clientWidth, app.clientHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  app.appendChild(renderer.domElement);
+  // 日志：控制台 + 经状态服务落盘到 logs/frontend-YYYYMMDD.log
+  const flog = new FrontendLog();
+  flog.start();
+
+  const renderer = createRenderer(app);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf1ebe2);
 
   // 房子
   const house = buildHouse(cfg.rooms);
   scene.add(house.root);
 
+  // 布局：先读回上次拖动后的位置（localStorage），再按它建家具；清掉缓存就回到 config/furniture.json
+  let storage: StorageLike | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    flog.write('warn', '[layout] localStorage 不可用，布局不会保存');
+  }
+  const store = new LayoutStore(cfg.furniture.items, cfg.rooms, storage, flog.write);
+  if (store.loadSaved() === 'applied') flog.write('info', '[layout] 已恢复上次保存的布局');
+
   // 家具
   const furniture = cfg.furniture.items.map(buildFurniture);
   for (const f of furniture) scene.add(f.group);
 
-  // 地台
+  // 背景、环境光照、主光、地台（风格基线见 scene/lookdev.ts）
   const center = house.box.getCenter(new THREE.Vector3());
   const radius = house.box.getSize(new THREE.Vector3()).setY(0).length() / 2;
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * 1.6, 64),
-    new THREE.MeshLambertMaterial({ color: 0xe6ddd0 }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(center.x, -0.065, center.z);
-  // 墙不投影，屋外地台也不接影子，否则家具影子会「穿墙」落到屋外
-  ground.receiveShadow = false;
-  scene.add(ground);
-
-  // 光：天光 + 一盏投影主光
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0xb9a893, 1.7));
-  const sun = new THREE.DirectionalLight(0xfff0dc, 1.6);
-  // 主光从左前上方来：远处墙面背光略暗，空间层次清楚（墙体与门窗框不投影，见 house.ts）
-  sun.position.set(center.x - 4, 10, center.z + 6);
-  sun.target.position.copy(center);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -radius - 1;
-  sc.right = sc.top = radius + 1;
-  sc.near = 1;
-  sc.far = 30;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.02;
-  scene.add(sun, sun.target);
+  setupLighting(renderer, scene, center, radius);
 
   // 角色（v0.1 只有一个 active 角色）
   const spec = cfg.characters.characters.find((c) => c.id === cfg.characters.active)!;
@@ -77,22 +70,63 @@ function boot(cfg: AppConfig) {
     ...furnitureObstacles(cfg.furniture.items),
   ]);
   if (pathfinder.blockedNodes.length || pathfinder.blockedEdges.length) {
-    console.warn('[nav] 以下导航点/边被墙或家具挡住，已停用', {
+    flog.write('warn', '[nav] 以下导航点/边被墙或家具挡住，已停用', {
       nodes: pathfinder.blockedNodes,
       edges: pathfinder.blockedEdges,
     });
   }
-  const log: LogFn = (level, msg, data) => {
-    (level === 'warn' ? console.warn : console.info)(`[agent:${spec.id}] ${msg}`, data ?? '');
-  };
+  const log: LogFn = (level, msg, data) => flog.write(level, `[agent:${spec.id}] ${msg}`, data);
   const spawn: Vec2 = spec.spawn ?? cfg.rooms.nav.nodes[0];
   const agent = new CharacterAgent(character, pathfinder, spawn, -90, { log });
-  const anchors = indexAnchors(cfg.furniture.items);
+  // 家具被拖动后交互点会重算，所以是 let；演员、面板都每次现取
+  let anchors = indexAnchors(cfg.furniture.items);
   const contact = new ContactShadow(character.scale);
   scene.add(contact.group);
   const syncContact = () =>
     contact.update(agent.position, character.root.rotation.y, agent.sitWeight, agent.seatHeight);
   syncContact();
+
+  // 道具（屏幕微光、翻开的本子、被子、耳机……）
+  buildHeadphones(character);
+  const props = new PropManager([...furniture.map((f) => f.group), character.root]);
+
+  // 导演：状态 → 排队 / 最短停留 → 演员（走过去、就位、动作、道具）
+  const directorClock = { t: 0 };
+  const performer = new StagePerformer(agent, pathfinder, () => anchors, () => cfg.rooms.nav.nodes, props, log);
+  const client = new StateClient({
+    onState: (state) => {
+      const decision = director.setState(cfg.characters.active, state);
+      flog.write('info', '[state] 收到状态', { activity: state.activity, source: state.source, since: state.since, decision });
+    },
+    onStatus: (ok, detail) => flog.write(ok ? 'info' : 'warn', ok ? '[state] 状态服务已连接' : '[state] 状态服务连不上，保持上一次有效状态', { detail }),
+  });
+  // 空闲池：没人安排时按权重自己挑事做（只从这个角色能做的活动里挑）
+  const idlePool = new IdlePool(cfg.activities, { allowed: spec.activities });
+  const director = new Director(cfg.activities, {
+    idlePool,
+    isoNow: () => isoLocal(new Date()),
+    // 自己挑的事写回状态服务（source = idle）：state.json、历史、以后的模拟器都能看到她在干什么
+    onIdlePick: (_id, state) => {
+      void client.post(state).catch(() => {
+        /* 服务不在也照常演 */
+      });
+    },
+    now: () => directorClock.t,
+    log: (level, msg, data) => flog.write(level, `[director] ${msg}`, data),
+    onPerformed: (_id, ended, next) =>
+      client.reportPerformed({
+        activity: next.activity,
+        source: next.source,
+        min_dwell: next.minDwell,
+        prev: ended.activity,
+        prev_duration: ended.totalSec,
+        prev_acted: ended.actedSec,
+        prev_min_dwell: ended.minDwell,
+      }),
+  });
+  // 多角色接口：v0.1 只登记并路由给 active 角色
+  director.register(spec.id, performer, true);
+  client.start();
 
   // 墙体遮挡检测用 matrixWorld 做射线；首帧渲染前就要算好，否则第一次检测全打偏
   scene.updateMatrixWorld(true);
@@ -109,11 +143,72 @@ function boot(cfg: AppConfig) {
     P(agent.position[0], 0.35 * character.scale, agent.position[1]),
   ];
 
-  const hud = createHud(app, 'v0.1 · M2 角色与走位');
+  // 后期：正在透明的墙、玻璃、贴地影子不参与环境光遮蔽
+  const hud = createHud(app, 'v0.1 · M5 拖家具');
   hud.onReset(() => rig.reset());
+  const toast = createToast(app);
+
+  // 家具拖动：数据与人物配合在 layout/，鼠标键盘与选中框在 DragController
+  const layout = new StageLayout({
+    store,
+    rooms: cfg.rooms,
+    pathfinder,
+    agent,
+    performer,
+    director,
+    characterId: spec.id,
+    setAnchors: (a) => {
+      anchors = a;
+    },
+    onMoved: (ids) => {
+      for (const f of furniture) if (ids.includes(f.item.id)) placeFurniture(f.group, f.item);
+    },
+    log: flog.write,
+  });
+  const syncLayoutBar = () => layoutBar.set({ canUndo: store.canUndo, isDefault: store.isDefault });
+  const drag = new DragController({
+    dom: renderer.domElement,
+    overlayRoot: app,
+    camera: rig.camera,
+    controls: rig.controls,
+    views: furniture,
+    store,
+    layout,
+    toast,
+    onChange: () => syncLayoutBar(),
+  });
+  const exportLayout = async () => {
+    const data = store.export();
+    try {
+      const res = await fetch('/layout/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: data.items }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { file } = (await res.json()) as { file: string };
+      toast(`布局已导出到 ${file}`);
+      flog.write('info', '[layout] 导出布局', { file });
+    } catch (e) {
+      // 状态服务不在：改成浏览器下载
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ items: data.items }, null, 2)], { type: 'application/json' }));
+      a.download = `layout-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('状态服务没连上，已改为浏览器下载');
+      flog.write('warn', '[layout] 导出接口不可用，改为浏览器下载', { error: (e as Error).message });
+    }
+  };
+  const layoutBar = createLayoutBar(app, { undo: () => drag.undo(), reset: () => drag.reset(), exportJson: () => void exportLayout() });
+  syncLayoutBar();
+
+  const pipeline = createPipeline(renderer, scene, rig.camera, () => [
+    ...house.walls.filter((w) => w.opacity < 0.98).map((w) => w.group),
+    ...house.glass,
+    contact.group,
+    ...drag.overlayObjects,
+  ]);
 
   const onResize = () => {
     renderer.setSize(app.clientWidth, app.clientHeight);
+    pipeline.setSize(app.clientWidth, app.clientHeight);
     rig.resize(app.clientWidth, app.clientHeight);
   };
   window.addEventListener('resize', onResize);
@@ -139,17 +234,29 @@ function boot(cfg: AppConfig) {
     pathLine.computeLineDistances();
   };
 
-  const seat = (key: string) => anchors.seats.get(key)!;
-  const stand = (key: string) => anchors.stands.get(key)!;
+  // 状态模拟面板（代替原计划的桌面模拟器，docs/验收问题.md C10）：把状态写给状态服务，再由轮询读回来交给导演
+  const send = (activity: string, source = 'sim:click') =>
+    client.post({ activity, source }).then((r) => {
+      if (r.status !== 200) flog.write('warn', `[state] 写入被拒绝（HTTP ${r.status}）`, { activity, body: r.body as Record<string, unknown> });
+    });
+  // 开发态：快进（看空闲池换活动不用干等）。按 1/30 秒一步推进角色与导演，画面最后刷新一次
+  const fastForward = (seconds: number) => {
+    const dt = 1 / 30;
+    for (let t = 0; t < seconds; t += dt) stepWorld(dt, dt);
+    flog.write('info', `[dev] 快进 ${seconds} 秒`);
+  };
   const devPanel = import.meta.env.DEV
-    ? createDevPanel(app, 'M2 走位演示（开发态；M3 起由状态驱动）', [
-        { label: '走到卧室床边', run: () => agent.walkTo(seat('bed:bed_lie').approach) },
-        { label: '坐电脑椅', run: () => agent.sitAt(seat('desk:desk_seat')) },
-        { label: '坐沙发', run: () => agent.sitAt(seat('sofa:sofa_seat')) },
-        { label: '客厅窗边', run: () => { const s = stand('living_window_spot:window_stand'); agent.standAt(s.plan, s.headingDeg); } },
-        { label: '卧室窗边', run: () => { const s = stand('bedroom_window_spot:window_stand'); agent.standAt(s.plan, s.headingDeg); } },
-        { label: '站起来', run: () => agent.standUp() },
-        { label: '无解测试', run: () => agent.walkTo(cfg.furniture.items.find((i) => i.id === 'wardrobe')!.position) },
+    ? createDevPanel(app, '状态模拟', [
+        { label: '用电脑', run: () => send('use_computer') },
+        { label: '写笔记', run: () => send('write_notes') },
+        { label: '沙发看电视', run: () => send('watch_tv') },
+        { label: '听歌', run: () => send('listen_music') },
+        { label: '床上睡觉', run: () => send('sleep') },
+        { label: '窗边发呆', run: () => send('daydream_window') },
+        { label: '闲逛', run: () => send('wander') },
+        { label: '停下（回空闲池）', run: () => send('idle') },
+        { label: '快进 1 分钟', run: () => fastForward(60) },
+        { label: '非法活动(fly)', run: () => send('fly') },
         { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 55, cfg.camera.minDistance) },
       ])
     : null;
@@ -159,17 +266,28 @@ function boot(cfg: AppConfig) {
   let frames = 0;
   let fpsTime = 0;
   let fps = 0;
-  const renderFrame = (dt: number) => {
+  const stepWorld = (dt: number, realDt: number) => {
+    // 导演的时钟走真实时间（最短停留按秒算，不受掉帧影响）；动作步长封顶，避免切回标签页时一步迈太大
+    directorClock.t += realDt;
     agent.update(dt);
+    performer.update();
+    director.update();
+    props.update(dt);
+  };
+  const renderFrame = (dt: number, realDt: number) => {
+    stepWorld(dt, realDt);
     syncContact();
     syncPathLine();
     rig.update();
+    drag.update(performance.now());
     fader.update(rig.camera, fadeTargets(), dt);
-    renderer.render(scene, rig.camera);
+    pipeline.render();
+    pipeline.reportFrame(dt);
   };
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
-    renderFrame(dt);
+    const realDt = clock.getDelta();
+    const dt = Math.min(realDt, 0.1);
+    renderFrame(dt, realDt);
     frames++;
     fpsTime += dt;
     if (fpsTime >= 0.5) {
@@ -180,8 +298,27 @@ function boot(cfg: AppConfig) {
       hud.setStats(
         `${fps} fps · 方位 ${v.azimuthDeg.toFixed(0)}° · 俯仰 ${v.polarDeg.toFixed(0)}° · 距离 ${v.distance.toFixed(1)} m · 透明墙 ${fader.occluding.size}`,
       );
+      const d = director.snapshot();
+      const next =
+        d.idleLeft !== null
+          ? `再过 ${Math.ceil(d.idleLeft)} 秒换下一件`
+          : d.idleIn !== null
+            ? d.idleIn > 0
+              ? `${Math.ceil(d.idleIn)} 秒后没新状态就进空闲池`
+              : '演满后进空闲池'
+            : '';
+      const dwell =
+        d.phase === 'ACTING'
+          ? d.dwellLeft > 0
+            ? `最短停留还剩 ${Math.ceil(d.dwellLeft)} 秒`
+            : next || `已演 ${Math.floor(d.acted)} 秒`
+          : d.phase === 'MOVING'
+            ? '正在过去'
+            : '';
       devPanel?.setStatus(
-        `${spec.name}：${agent.state} · (${agent.position[0].toFixed(2)}, ${agent.position[1].toFixed(2)}) · ${agent.headingDeg.toFixed(0)}°`,
+        d.activity
+          ? `${spec.name}：${d.activity}（${d.source}）· ${dwell}${d.queued ? ` · 排队：${d.queued}` : ''} · ${agent.state}`
+          : `${spec.name}：还没有收到状态${d.idleIn !== null ? `，${Math.ceil(d.idleIn)} 秒后进空闲池` : ''} · ${agent.state}`,
       );
     }
   });
@@ -202,11 +339,21 @@ function boot(cfg: AppConfig) {
       scene,
       rig,
       fader,
+      pipeline,
       renderer,
       agent,
-      anchors,
       pathfinder,
       character,
+      director,
+      performer,
+      props,
+      client,
+      store,
+      layout,
+      drag,
+      get anchors() {
+        return anchors;
+      },
       setView: (az: number, polar: number, dist: number) => {
         rig.setView(az, polar, dist);
         // 跳过渐变，直接到位，便于截图
@@ -217,7 +364,7 @@ function boot(cfg: AppConfig) {
         const dt = 1 / 60;
         let t = 0;
         for (; t < seconds; t += dt) {
-          agent.update(dt);
+          stepWorld(dt, dt);
           if (until?.()) break;
         }
         syncContact();
@@ -271,9 +418,9 @@ function boot(cfg: AppConfig) {
       },
       async capture(name: string) {
         // 等所有着色器编译就绪再截（Chrome 并行编译时，未就绪的物体那一帧会被跳过）
-        renderer.render(scene, rig.camera);
+        pipeline.render();
         await renderer.compileAsync(scene, rig.camera);
-        renderer.render(scene, rig.camera);
+        pipeline.render();
         const data = renderer.domElement.toDataURL('image/png');
         const res = await fetch(`/__dev/screenshot?name=${encodeURIComponent(name)}`, { method: 'POST', body: data });
         return res.json();
@@ -283,13 +430,18 @@ function boot(cfg: AppConfig) {
   }
 }
 
-try {
-  boot(loadConfig());
-} catch (e) {
-  if (e instanceof ConfigError) {
-    console.error(e.message);
-    showConfigErrors(app, e.issues);
-  } else {
-    throw e;
+(async () => {
+  try {
+    const cfg = loadConfig();
+    const active = cfg.characters.characters.find((c) => c.id === cfg.characters.active);
+    if (active) await preloadGltfCharacter(active);
+    boot(cfg);
+  } catch (e) {
+    if (e instanceof ConfigError) {
+      console.error(e.message);
+      showConfigErrors(app, e.issues);
+    } else {
+      throw e;
+    }
   }
-}
+})();

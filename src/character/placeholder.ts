@@ -2,14 +2,15 @@
 // 形象按 M2 首版冻结，不随笑笑的形象整改变化；v0.2 帅帅进场时再按他的三视图重做。
 
 import * as THREE from 'three';
+import { ROUGH, soft, type SoftParams } from '../scene/materials';
 import type { CharacterSpec } from '../config/types';
 import { createBareRig, type CharacterRig } from './rig';
 
 const HEAD_R = 0.205;
 const HEAD_CENTER_Y = 0.2;
 
-function lambert(color: string | number, opts: THREE.MeshLambertMaterialParameters = {}) {
-  return new THREE.MeshLambertMaterial({ color, ...opts });
+function lambert(color: string | number, opts: SoftParams = {}) {
+  return soft(color, { roughness: ROUGH.cloth, ...opts });
 }
 
 function add(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], x = 0, y = 0, z = 0) {
@@ -152,7 +153,7 @@ function placeholderShirt(shirt: string, print: string): THREE.CanvasTexture {
 export function buildPlaceholder(spec: CharacterSpec): CharacterRig {
   const rig = createBareRig(spec.id, spec.height);
   const p = (k: string, d: string) => spec.palette[k] ?? d;
-  const skinMat = lambert(p('skin', '#f6dccb'));
+  const skinMat = lambert(p('skin', '#f6dccb'), { roughness: ROUGH.skin });
 
   // 头
   const face = placeholderFace(p('skin', '#f6dccb'), p('eye_iris', '#3b2a20'), p('blush', '#f2b8b0'));
@@ -165,7 +166,7 @@ export function buildPlaceholder(spec: CharacterSpec): CharacterRig {
   add(rig.torso, new THREE.CylinderGeometry(0.036, 0.04, 0.08, 16), skinMat, 0, 0.395, 0);
 
   // 短发 + 圆框眼镜
-  const hairMat = lambert(p('hair', '#1a1a1e'), { side: THREE.DoubleSide });
+  const hairMat = lambert(p('hair', '#1a1a1e'), { side: THREE.DoubleSide, roughness: ROUGH.hair, envMapIntensity: 0.45 });
   add(rig.head, new THREE.SphereGeometry(0.222, 40, 20, Math.PI / 2 + 0.95, Math.PI * 2 - 1.9, 0, Math.PI * 0.6), hairMat, 0, HEAD_CENTER_Y, 0);
   add(rig.head, new THREE.SphereGeometry(0.227, 32, 12, Math.PI / 2 - 1.0, 2.0, 0, Math.PI * 0.42), hairMat, 0, HEAD_CENTER_Y, 0);
   const glassMat = lambert(p('glasses', '#3a3a40'));

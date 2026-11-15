@@ -11,6 +11,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "state-server": "vite-node server/main.ts",
+    "state": "node scripts/set-state.mjs",
     "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {

@@ -16,6 +16,9 @@ export function createHud(root: HTMLElement, subtitle: string): Hud {
     <ul class="hud-help">
       <li><b>左键拖动</b> 环绕旋转</li>
       <li><b>滚轮</b> 缩放</li>
+      <li><b>双击家具</b> 选中，按住拖动</li>
+      <li><b>R / 右键</b> 旋转 90°</li>
+      <li><b>Ctrl+Z</b> 撤销 · <b>Esc</b> 取消选中</li>
     </ul>
     <button class="hud-btn" type="button">复位视角</button>
   `;
@@ -31,6 +34,50 @@ export function createHud(root: HTMLElement, subtitle: string): Hud {
       stats.textContent = t;
     },
     onReset: (fn) => btn.addEventListener('click', fn),
+  };
+}
+
+/** 屏幕下方的短提示（放不下、已撤销、已导出……），几秒后自动消失 */
+export function createToast(root: HTMLElement): (msg: string) => void {
+  const el = document.createElement('div');
+  el.className = 'hud toast';
+  root.appendChild(el);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (msg) => {
+    el.textContent = msg;
+    el.classList.add('show');
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => el.classList.remove('show'), 2600);
+  };
+}
+
+export interface LayoutBar {
+  /** 按钮可用状态 */
+  set(state: { canUndo: boolean; isDefault: boolean }): void;
+}
+
+/** 右上角的布局按钮：撤销、恢复默认、导出布局 JSON（docs/数据与接口约定.md §5） */
+export function createLayoutBar(root: HTMLElement, actions: { undo(): void; reset(): void; exportJson(): void }): LayoutBar {
+  const bar = document.createElement('div');
+  bar.className = 'hud layout-bar';
+  const mk = (label: string, fn: () => void) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'hud-btn';
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    bar.appendChild(b);
+    return b;
+  };
+  const undo = mk('撤销', actions.undo);
+  const reset = mk('恢复默认', actions.reset);
+  mk('导出布局 JSON', actions.exportJson);
+  root.appendChild(bar);
+  return {
+    set: (s) => {
+      undo.disabled = !s.canUndo;
+      reset.disabled = s.isDefault;
+    },
   };
 }
 

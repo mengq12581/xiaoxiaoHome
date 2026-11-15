@@ -56,7 +56,7 @@ export class WallFader {
       for (const m of w.meshes) m.renderOrder = solid ? 0 : 3;
       // 实体墙不描线；只有被透明掉的墙保留轮廓（PRD F-01、docs/验收问题.md C2/C4）
       w.edges.visible = !solid && this.cfg.wallFadeWithOutline;
-      w.edgeMaterial.opacity = 0.9;
+      w.edgeMaterial.opacity = 0.55 * (1 - w.opacity);
     }
   }
 }

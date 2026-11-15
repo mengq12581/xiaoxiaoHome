@@ -30,8 +30,8 @@ interface FloorStyle {
 }
 
 const FLOOR_STYLES: Record<string, FloorStyle> = {
-  wood_light: { base: [222, 196, 160], jitter: 14, plank: true },
-  wood_warm: { base: [201, 160, 120], jitter: 14, plank: true },
+  wood_light: { base: [224, 199, 164], jitter: 6, plank: true },
+  wood_warm: { base: [205, 166, 127], jitter: 6, plank: true },
   tile: { base: [228, 226, 220], jitter: 4, plank: false },
   carpet: { base: [196, 186, 204], jitter: 6, plank: false },
 };
@@ -64,7 +64,7 @@ export function floorTexture(kind: string): THREE.CanvasTexture {
         g.fillStyle = col((rnd() - 0.5) * style.jitter * 2);
         g.fillRect(x, i * rowH, len, rowH);
         // 木纹
-        g.strokeStyle = 'rgba(120,80,40,0.08)';
+        g.strokeStyle = 'rgba(120,80,40,0.06)';
         g.lineWidth = 1;
         for (let k = 0; k < 3; k++) {
           const yy = i * rowH + rowH * (0.2 + rnd() * 0.6);
@@ -73,11 +73,11 @@ export function floorTexture(kind: string): THREE.CanvasTexture {
           g.bezierCurveTo(x + len * 0.3, yy + (rnd() - 0.5) * 6, x + len * 0.7, yy + (rnd() - 0.5) * 6, x + len - 4, yy);
           g.stroke();
         }
-        g.fillStyle = 'rgba(90,60,30,0.28)';
+        g.fillStyle = 'rgba(90,60,30,0.10)';
         g.fillRect(x, i * rowH, 2, rowH);
         x += len;
       }
-      g.fillStyle = 'rgba(90,60,30,0.22)';
+      g.fillStyle = 'rgba(90,60,30,0.12)';
       g.fillRect(0, i * rowH, size, 2);
     }
   } else {
@@ -95,7 +95,7 @@ export function floorTexture(kind: string): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   cache.set(kind, tex);
   return tex;
 }
@@ -129,7 +129,7 @@ export function woodGrainTexture(): THREE.CanvasTexture {
   return t;
 }
 
-/** 织物（灰度）：细密经纬 + 轻微起伏，哑光 */
+/** 织物（灰度）：低对比绒面，哑光 */
 export function fabricTexture(): THREE.CanvasTexture {
   const hit = cache.get('__fabric');
   if (hit) return hit;
@@ -139,17 +139,14 @@ export function fabricTexture(): THREE.CanvasTexture {
   const g = c.getContext('2d')!;
   g.fillStyle = '#f4f4f4';
   g.fillRect(0, 0, size, size);
+  // 柔和的绒面：只有低对比的细小明暗斑点，不画经纬格线（格线远看像像素网格）
   const rnd = seeded(5);
-  for (let i = 0; i < size; i += 2) {
-    g.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.25})`;
-    g.fillRect(0, i, size, 1);
-    g.fillStyle = `rgba(210,210,210,${0.2 + rnd() * 0.2})`;
-    g.fillRect(i, 0, 1, size);
-  }
-  for (let i = 0; i < 400; i++) {
-    const v = 225 + Math.floor(rnd() * 30);
-    g.fillStyle = `rgba(${v},${v},${v},0.5)`;
-    g.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 2, 1);
+  for (let i = 0; i < 900; i++) {
+    const v = 232 + Math.floor(rnd() * 23);
+    g.fillStyle = `rgba(${v},${v},${v},0.35)`;
+    g.beginPath();
+    g.arc(rnd() * size, rnd() * size, 0.6 + rnd() * 1.4, 0, Math.PI * 2);
+    g.fill();
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

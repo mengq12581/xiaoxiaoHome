@@ -339,6 +339,7 @@ function validateActivities(raw: unknown, anchorIds: Set<string> | null): Config
   }
   need(c, raw, '$', 'quiet_hours', (v) => Array.isArray(v) && v.length === 2 && v.every((t) => typeof t === 'string' && HHMM.test(t)), '["HH:MM","HH:MM"]');
   need(c, raw, '$', 'idle_after_sec', (v) => isNum(v) && v > 0, '正数（秒）');
+  opt(c, raw, '$', 'idle_cooldown_sec', (v) => isNum(v) && v >= 0, '非负数（秒）');
   if (opt(c, raw, '$', 'idle_pool_override', isObj, '对象') && isObj(raw.idle_pool_override) && isObj(raw.activities)) {
     for (const [mode, pool] of Object.entries(raw.idle_pool_override)) {
       if (!isObj(pool)) {
