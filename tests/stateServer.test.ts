@@ -142,6 +142,28 @@ describe('状态服务 HTTP 接口', () => {
     expect((await fetch(`${url}/performed`, { method: 'POST', body: JSON.stringify({ activity: 'fly', prev: 'watch_tv' }) })).status).toBe(400);
   });
 
+  it('POST /layout/export：写 runtime/layout-<时间戳>.json；内容不对返回 400', async () => {
+    const { url, root } = await start({ now: () => new Date(2026, 10, 15, 9, 5, 7) });
+    const items = [
+      { id: 'sofa', position: [0.55, 3.3], rotation: 270 },
+      { id: 'desk', position: [5.55, 2.6], rotation: 90, extra: 'ignored' },
+    ];
+    const res = await fetch(`${url}/layout/export`, { method: 'POST', body: JSON.stringify({ items }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ file: 'runtime/layout-20261115-090507.json' });
+    const saved = JSON.parse(readFileSync(join(root, 'runtime/layout-20261115-090507.json'), 'utf8'));
+    expect(saved.items).toEqual([
+      { id: 'sofa', position: [0.55, 3.3], rotation: 270 },
+      { id: 'desk', position: [5.55, 2.6], rotation: 90 },
+    ]);
+    // 同一秒再导出一次不覆盖
+    const again = await (await fetch(`${url}/layout/export`, { method: 'POST', body: JSON.stringify({ items }) })).json();
+    expect(again.file).toBe('runtime/layout-20261115-090507-2.json');
+    for (const bad of [{}, { items: [] }, { items: [{ id: 'sofa', position: [1], rotation: 0 }] }, { items: [{ id: 'sofa', position: [1, 'x'], rotation: 0 }] }]) {
+      expect((await fetch(`${url}/layout/export`, { method: 'POST', body: JSON.stringify(bad) })).status).toBe(400);
+    }
+  });
+
   it('GET /activities：返回可用活动与字段说明', async () => {
     const { url } = await start();
     const body = await (await fetch(`${url}/activities`)).json();

@@ -106,8 +106,76 @@ body {
   border: 1px solid var(--line);
 }
 
-.dev-panel {
+.layout-bar {
   top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(80, 60, 40, 0.08);
+}
+
+.hud-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.toast {
+  left: 50%;
+  bottom: 44px;
+  transform: translate(-50%, 8px);
+  padding: 8px 16px;
+  background: rgba(59, 51, 44, 0.88);
+  color: #fff8ef;
+  font-size: 13px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+  white-space: nowrap;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.ctx-menu {
+  position: absolute;
+  z-index: 5;
+  min-width: 150px;
+  padding: 5px;
+  background: #fffdf9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(80, 60, 40, 0.16);
+  display: flex;
+  flex-direction: column;
+}
+
+.ctx-menu button {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ctx-menu button:hover {
+  background: rgba(201, 139, 107, 0.14);
+  color: var(--accent);
+}
+
+.dev-panel {
+  top: 68px;
   right: 16px;
   width: 220px;
   padding: 12px 14px;

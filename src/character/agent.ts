@@ -27,6 +27,17 @@ export interface SeatPose {
   approach: Vec2;
 }
 
+/** 两个座位是不是同一个地方（家具被拖动后，同一个交互点的位置会变） */
+export function sameSeat(a: SeatPose | null | undefined, b: SeatPose | null | undefined): boolean {
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    Math.hypot(a.plan[0] - b.plan[0], a.plan[1] - b.plan[1]) < 0.01 &&
+    Math.abs(a.height - b.height) < 0.005 &&
+    Math.abs(angleDiff(a.headingDeg, b.headingDeg)) < 0.5
+  );
+}
+
 export type AgentState = 'idle' | 'walking' | 'turning' | 'sitting_down' | 'seated' | 'standing_up' | 'lying_down' | 'lying' | 'getting_up';
 
 type Step =
@@ -100,6 +111,8 @@ export class CharacterAgent {
   /** 躺平权重 0～1 */
   private lieAmt = 0;
   private lieT = 0;
+  /** 当前这段走位的目的地（重新寻路用） */
+  private walkGoal: Vec2 | null = null;
   private waitLeft = 0;
   /** 闲逛途中的停顿（站着四处看看） */
   private waiting = false;
@@ -172,8 +185,8 @@ export class CharacterAgent {
 
   /** 走到座位前、转身、坐下 */
   sitAt(seat: SeatPose) {
-    if (this.state === 'seated' && this.seat?.id === seat.id) return;
-    if (this.state === 'lying' && this.seat?.id === seat.id) {
+    if (this.state === 'seated' && sameSeat(this.seat, seat)) return;
+    if (this.state === 'lying' && sameSeat(this.seat, seat)) {
       this.queue = [{ kind: 'unlie' }];
       this.startNext();
       return;
@@ -187,8 +200,8 @@ export class CharacterAgent {
 
   /** 走到床边、转身、坐上去、躺平 */
   lieAt(seat: SeatPose) {
-    if (this.state === 'lying' && this.seat?.id === seat.id) return;
-    if (this.state === 'seated' && this.seat?.id === seat.id) {
+    if (this.state === 'lying' && sameSeat(this.seat, seat)) return;
+    if (this.state === 'seated' && sameSeat(this.seat, seat)) {
       this.queue = [{ kind: 'lie' }];
       this.startNext();
       return;
@@ -214,8 +227,30 @@ export class CharacterAgent {
     ]);
   }
 
+  /** 停下手上的事：坐着 / 躺着的站起来，正在走的原地停下 */
   standUp() {
     this.command([]);
+  }
+
+  /**
+   * 障碍变了（家具被拖动）：正在走就按新障碍从当前位置重新寻路，目的地不变。返回路还通不通。
+   * 走不通时原地停下；soft = true（家具还在被拖着，只是暂时挡住）不算失败，等松手后再说。
+   */
+  repath(soft = false): boolean {
+    if (this.state !== 'walking' || !this.walkGoal) return true;
+    const res = this.pf.findPath(this.position, this.walkGoal);
+    if (!res.ok) {
+      this.opts.log(soft ? 'info' : 'warn', soft ? '路被拖动中的家具挡住，先停下' : '寻路失败，原地停下', { from: this.position, to: this.walkGoal, reason: res.reason });
+      this.queue = [];
+      this.path = [];
+      this.state = 'idle';
+      this.failed = !soft;
+      return false;
+    }
+    this.path = res.path;
+    this.wp = 1;
+    if (res.path.length < 2) this.startNext();
+    return true;
   }
 
   private get inTransition() {
@@ -262,6 +297,7 @@ export class CharacterAgent {
         }
         this.path = res.path;
         this.wp = 1;
+        this.walkGoal = step.goal;
         this.state = 'walking';
         this.opts.log('info', '开始走位', { to: step.goal, waypoints: res.path.length });
         if (res.path.length < 2) this.startNext();

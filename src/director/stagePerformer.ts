@@ -6,7 +6,7 @@
 //   props        到位后出现的道具
 // 所以新增一个活动只要加配置和一个交互点，这里和导演都不用改。
 
-import type { CharacterAgent, SeatPose } from '../character/agent';
+import { sameSeat, type CharacterAgent, type SeatPose } from '../character/agent';
 import type { Vec2 } from '../config/types';
 import { pathLength, type Pathfinder } from '../nav/pathfinder';
 import type { AnchorIndex, StandSpot } from '../scene/anchors';
@@ -23,6 +23,8 @@ export class StagePerformer implements Performer {
   private plan: PerformPlan | null = null;
   private target: Target = { kind: 'stay' };
   private propsShown = false;
+  /** 正在用的家具被拖起来了：先站起来等着，松手后由导演重新安排（relocate） */
+  private suspended = false;
   private seed = 987654321;
 
   constructor(
@@ -37,6 +39,7 @@ export class StagePerformer implements Performer {
 
   begin(plan: PerformPlan) {
     this.plan = plan;
+    this.suspended = false;
     this.propsShown = false;
     this.props.set([]);
     this.agent.setAnim(null);
@@ -61,6 +64,31 @@ export class StagePerformer implements Performer {
     this.agent.setAnim(plan.spec.anim);
   }
 
+  /** 这场演出的目的地是不是这些家具之一（交互点 key = 家具id:交互点id） */
+  usesFurniture(ids: Iterable<string>): boolean {
+    const t = this.target;
+    const key = t.kind === 'seat' ? t.seat.id : t.kind === 'stand' ? t.spot.id : null;
+    if (!key) return false;
+    const owner = key.slice(0, key.indexOf(':'));
+    for (const id of ids) if (id === owner) return true;
+    return false;
+  }
+
+  /** 她正在用（或正走向）的家具被拖起来了：收起道具和动作，坐着的站起来、走着的停下，等松手 */
+  suspend() {
+    if (!this.plan || this.suspended) return;
+    this.suspended = true;
+    this.propsShown = false;
+    this.props.set([]);
+    this.agent.setAnim(null);
+    this.agent.standUp();
+    this.log('info', '正在用的家具被拖动：先起身等着', { activity: this.plan.activity });
+  }
+
+  get isSuspended() {
+    return this.suspended;
+  }
+
   get failed() {
     return this.agent.failed && this.target.kind !== 'wander';
   }
@@ -68,11 +96,11 @@ export class StagePerformer implements Performer {
   get arrived(): boolean {
     const a = this.agent;
     const t = this.target;
-    if (!this.plan || a.failed) return false;
+    if (!this.plan || a.failed || this.suspended) return false;
     let there = false;
     switch (t.kind) {
       case 'seat':
-        there = a.settled && a.seat?.id === t.seat.id && a.state === (t.lie ? 'lying' : 'seated');
+        there = a.settled && sameSeat(a.seat, t.seat) && a.state === (t.lie ? 'lying' : 'seated');
         break;
       case 'stand':
         there = a.settled && a.state === 'idle' && Math.hypot(a.position[0] - t.spot.plan[0], a.position[1] - t.spot.plan[1]) < 0.05;
@@ -89,7 +117,7 @@ export class StagePerformer implements Performer {
 
   /** 每帧调用：到位后摆道具；闲逛走完一轮接着走 */
   update() {
-    if (!this.plan) return;
+    if (!this.plan || this.suspended) return;
     if (!this.propsShown && this.arrived && this.target.kind !== 'wander') {
       this.propsShown = true;
       this.props.set(this.plan.spec.props ?? []);
@@ -109,7 +137,7 @@ export class StagePerformer implements Performer {
     // 已经坐在 / 站在其中一个上：不挪窝（同一张桌子上「用电脑」换「写笔记」不用站起来再坐下）
     for (const type of types) {
       for (const key of idx.byType.get(type) ?? []) {
-        if (this.agent.seat?.id === key) return { kind: 'seat', seat: idx.seats.get(key)!, lie };
+        if (sameSeat(this.agent.seat, idx.seats.get(key))) return { kind: 'seat', seat: idx.seats.get(key)!, lie };
       }
     }
     for (const type of types) {

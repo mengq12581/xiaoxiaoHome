@@ -209,6 +209,30 @@ export class StateStore {
     return true;
   }
 
+  /** 导出布局：写 runtime/layout-<时间戳>.json（docs/数据与接口约定.md §5、docs/验收问题.md A3），返回相对路径 */
+  exportLayout(raw: unknown): string | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const items = (raw as { items?: unknown }).items;
+    if (!Array.isArray(items) || items.length === 0 || items.length > 500) return null;
+    const clean: { id: string; position: [number, number]; rotation: number }[] = [];
+    for (const it of items) {
+      const o = it as { id?: unknown; position?: unknown; rotation?: unknown };
+      const pos = o?.position;
+      if (typeof o?.id !== 'string' || o.id.length > 64 || !Array.isArray(pos) || pos.length !== 2 || !pos.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+      if (typeof o.rotation !== 'number' || !Number.isFinite(o.rotation)) return null;
+      clean.push({ id: o.id, position: [pos[0], pos[1]], rotation: o.rotation });
+    }
+    const now = this.now();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${ymd(now)}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+    mkdirSync(this.runtimeDir, { recursive: true });
+    let name = `layout-${stamp}.json`;
+    for (let i = 2; existsSync(join(this.runtimeDir, name)); i++) name = `layout-${stamp}-${i}.json`;
+    writeFileSync(join(this.runtimeDir, name), JSON.stringify({ exported_at: isoLocal(now), items: clean }, null, 2) + '\n');
+    this.log('info', '导出布局', { file: `runtime/${name}`, items: clean.length });
+    return `runtime/${name}`;
+  }
+
   /** 前端日志代写（docs/验收问题.md A3） */
   appendFrontendLog(lines: unknown): number {
     if (!Array.isArray(lines)) return 0;
@@ -258,6 +282,7 @@ export class StateStore {
 
   private writeStateFile(state: StateObject) {
     const text = JSON.stringify(state, null, 2) + '\n';
+    mkdirSync(this.runtimeDir, { recursive: true }); // 运行中 runtime/ 被删掉也不至于写不进去
     const tmp = this.stateFile + '.tmp';
     writeFileSync(tmp, text);
     renameSync(tmp, this.stateFile);

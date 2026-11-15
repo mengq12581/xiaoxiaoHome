@@ -55,7 +55,7 @@ export function createHandler(store: StateStore) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const path = url.pathname;
-    if (!['/state', '/history', '/activities', '/log', '/performed'].includes(path)) return false;
+    if (!['/state', '/history', '/activities', '/log', '/performed', '/layout/export'].includes(path)) return false;
     const origin = corsOrigin(req);
     if (origin) {
       res.setHeader('access-control-allow-origin', origin);
@@ -109,6 +109,21 @@ export function createHandler(store: StateStore) {
         }
         if (store.recordPerformed(raw)) send(res, 200, { ok: true });
         else send(res, 400, { error: 'invalid_body' });
+      } else if (path === '/layout/export' && req.method === 'POST') {
+        const body = await readBody(req, LOG_BODY_LIMIT);
+        if (body === 'too_large') {
+          send(res, 413, { error: 'payload_too_large', limit_bytes: LOG_BODY_LIMIT });
+          return true;
+        }
+        let raw: unknown = null;
+        try {
+          raw = JSON.parse(body);
+        } catch {
+          /* 下面按非法处理 */
+        }
+        const file = store.exportLayout(raw);
+        if (file) send(res, 200, { file });
+        else send(res, 400, { error: 'invalid_layout', message: '应为 { items: [{ id, position: [x, y], rotation }] }' });
       } else if (path === '/log' && req.method === 'POST') {
         const body = await readBody(req, LOG_BODY_LIMIT);
         if (body === 'too_large') {

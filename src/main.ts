@@ -3,7 +3,10 @@ import { loadConfig } from './config/load';
 import { ConfigError } from './config/validate';
 import type { AppConfig, Vec2 } from './config/types';
 import { buildHouse, P } from './scene/house';
-import { buildFurniture } from './scene/furniture';
+import { buildFurniture, placeFurniture } from './scene/furniture';
+import { DragController } from './scene/dragController';
+import { LayoutStore, type StorageLike } from './layout/layoutStore';
+import { StageLayout } from './layout/stageLayout';
 import { CameraRig } from './scene/cameraRig';
 import { createPipeline, createRenderer, setupLighting } from './scene/lookdev';
 import { WallFader } from './scene/wallFade';
@@ -13,7 +16,7 @@ import { buildCharacter } from './character/model';
 import { preloadGltfCharacter } from './character/gltfModel';
 import { CharacterAgent, type LogFn } from './character/agent';
 import { ContactShadow } from './character/contactShadow';
-import { createHud, showConfigErrors } from './ui/hud';
+import { createHud, createLayoutBar, createToast, showConfigErrors } from './ui/hud';
 import { createDevPanel } from './ui/devPanel';
 import { Director } from './director/director';
 import { IdlePool } from './director/idlePool';
@@ -36,6 +39,16 @@ function boot(cfg: AppConfig) {
   // 房子
   const house = buildHouse(cfg.rooms);
   scene.add(house.root);
+
+  // 布局：先读回上次拖动后的位置（localStorage），再按它建家具；清掉缓存就回到 config/furniture.json
+  let storage: StorageLike | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    flog.write('warn', '[layout] localStorage 不可用，布局不会保存');
+  }
+  const store = new LayoutStore(cfg.furniture.items, cfg.rooms, storage, flog.write);
+  if (store.loadSaved() === 'applied') flog.write('info', '[layout] 已恢复上次保存的布局');
 
   // 家具
   const furniture = cfg.furniture.items.map(buildFurniture);
@@ -65,7 +78,8 @@ function boot(cfg: AppConfig) {
   const log: LogFn = (level, msg, data) => flog.write(level, `[agent:${spec.id}] ${msg}`, data);
   const spawn: Vec2 = spec.spawn ?? cfg.rooms.nav.nodes[0];
   const agent = new CharacterAgent(character, pathfinder, spawn, -90, { log });
-  const anchors = indexAnchors(cfg.furniture.items);
+  // 家具被拖动后交互点会重算，所以是 let；演员、面板都每次现取
+  let anchors = indexAnchors(cfg.furniture.items);
   const contact = new ContactShadow(character.scale);
   scene.add(contact.group);
   const syncContact = () =>
@@ -130,14 +144,67 @@ function boot(cfg: AppConfig) {
   ];
 
   // 后期：正在透明的墙、玻璃、贴地影子不参与环境光遮蔽
+  const hud = createHud(app, 'v0.1 · M5 拖家具');
+  hud.onReset(() => rig.reset());
+  const toast = createToast(app);
+
+  // 家具拖动：数据与人物配合在 layout/，鼠标键盘与选中框在 DragController
+  const layout = new StageLayout({
+    store,
+    rooms: cfg.rooms,
+    pathfinder,
+    agent,
+    performer,
+    director,
+    characterId: spec.id,
+    setAnchors: (a) => {
+      anchors = a;
+    },
+    onMoved: (ids) => {
+      for (const f of furniture) if (ids.includes(f.item.id)) placeFurniture(f.group, f.item);
+    },
+    log: flog.write,
+  });
+  const syncLayoutBar = () => layoutBar.set({ canUndo: store.canUndo, isDefault: store.isDefault });
+  const drag = new DragController({
+    dom: renderer.domElement,
+    overlayRoot: app,
+    camera: rig.camera,
+    controls: rig.controls,
+    views: furniture,
+    store,
+    layout,
+    toast,
+    onChange: () => syncLayoutBar(),
+  });
+  const exportLayout = async () => {
+    const data = store.export();
+    try {
+      const res = await fetch('/layout/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: data.items }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { file } = (await res.json()) as { file: string };
+      toast(`布局已导出到 ${file}`);
+      flog.write('info', '[layout] 导出布局', { file });
+    } catch (e) {
+      // 状态服务不在：改成浏览器下载
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ items: data.items }, null, 2)], { type: 'application/json' }));
+      a.download = `layout-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('状态服务没连上，已改为浏览器下载');
+      flog.write('warn', '[layout] 导出接口不可用，改为浏览器下载', { error: (e as Error).message });
+    }
+  };
+  const layoutBar = createLayoutBar(app, { undo: () => drag.undo(), reset: () => drag.reset(), exportJson: () => void exportLayout() });
+  syncLayoutBar();
+
   const pipeline = createPipeline(renderer, scene, rig.camera, () => [
     ...house.walls.filter((w) => w.opacity < 0.98).map((w) => w.group),
     ...house.glass,
     contact.group,
+    ...drag.overlayObjects,
   ]);
-
-  const hud = createHud(app, 'v0.1 · M4 空闲池');
-  hud.onReset(() => rig.reset());
 
   const onResize = () => {
     renderer.setSize(app.clientWidth, app.clientHeight);
@@ -212,6 +279,7 @@ function boot(cfg: AppConfig) {
     syncContact();
     syncPathLine();
     rig.update();
+    drag.update(performance.now());
     fader.update(rig.camera, fadeTargets(), dt);
     pipeline.render();
     pipeline.reportFrame(dt);
@@ -274,13 +342,18 @@ function boot(cfg: AppConfig) {
       pipeline,
       renderer,
       agent,
-      anchors,
       pathfinder,
       character,
       director,
       performer,
       props,
       client,
+      store,
+      layout,
+      drag,
+      get anchors() {
+        return anchors;
+      },
       setView: (az: number, polar: number, dist: number) => {
         rig.setView(az, polar, dist);
         // 跳过渐变，直接到位，便于截图

@@ -228,6 +228,19 @@ export class Director {
     return 'queued';
   }
 
+  /**
+   * 家具挪了地方（M5）：正在演 / 正要去的那场重新安排一次——演员按最新的交互点重新选地方、走过去、就位。
+   * 活动本身不变，已经演掉的最短停留照算（不因为挪家具而重新计时）。
+   */
+  relocate(characterId: string) {
+    const slot = this.slots.get(characterId);
+    const cur = slot?.current;
+    if (!slot || !cur) return;
+    this.log('info', '家具位置变了，重新就位', { activity: cur.state.activity });
+    slot.phase = 'MOVING';
+    slot.performer.begin({ activity: cur.state.activity, spec: cur.spec, state: cur.state });
+  }
+
   /** 每帧调用：推进状态机 */
   update() {
     const now = this.opts.now();
@@ -245,7 +258,7 @@ export class Director {
       }
       if (slot.phase === 'MOVING' && slot.performer.arrived) {
         slot.phase = 'ACTING';
-        cur.actingSince = now;
+        cur.actingSince ??= now;
         this.log('info', '就位，开始演', { activity: cur.state.activity, min_dwell: cur.minDwell, planned: cur.plannedSec === null ? undefined : Math.round(cur.plannedSec) });
       }
       // 兜底站姿不等就位：随时可以换走
