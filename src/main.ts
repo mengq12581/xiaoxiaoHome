@@ -234,7 +234,7 @@ function boot(cfg: AppConfig) {
     pathLine.computeLineDistances();
   };
 
-  // 开发态：状态模拟面板（等同于模拟器点按钮：把状态写给状态服务，再由轮询读回来交给导演）
+  // 状态模拟面板（代替原计划的桌面模拟器，docs/验收问题.md C10）：把状态写给状态服务，再由轮询读回来交给导演
   const send = (activity: string, source = 'sim:click') =>
     client.post({ activity, source }).then((r) => {
       if (r.status !== 200) flog.write('warn', `[state] 写入被拒绝（HTTP ${r.status}）`, { activity, body: r.body as Record<string, unknown> });
@@ -246,7 +246,7 @@ function boot(cfg: AppConfig) {
     flog.write('info', `[dev] 快进 ${seconds} 秒`);
   };
   const devPanel = import.meta.env.DEV
-    ? createDevPanel(app, '状态模拟（开发态；正式的模拟器在 M6）', [
+    ? createDevPanel(app, '状态模拟', [
         { label: '用电脑', run: () => send('use_computer') },
         { label: '写笔记', run: () => send('write_notes') },
         { label: '沙发看电视', run: () => send('watch_tv') },
