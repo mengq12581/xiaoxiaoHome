@@ -48,29 +48,29 @@ describe('寻路', () => {
     }
   });
 
-  it('从客厅沙发前走到卧室床边：穿过门洞，不穿墙、不穿家具', () => {
+  it('从客厅沙发前走到卧室床边：穿过卧室门洞，不穿墙、不穿家具', () => {
     const pf = make();
     const res = pf.findPath(approachOf('sofa'), approachOf('bed'));
     expect(res.ok).toBe(true);
     assertClear(pf, res.path);
-    // 必须经过门洞（x=6 处 y 在 2.7～3.7）
+    // 必须经过卧室门洞（y=4.2 处 x 在 2.5～3.4）
     let crossed = false;
     for (let i = 1; i < res.path.length; i++) {
       const [a, b] = [res.path[i - 1], res.path[i]];
-      if ((a[0] - 6) * (b[0] - 6) <= 0 && a[0] !== b[0]) {
-        const t = (6 - a[0]) / (b[0] - a[0]);
-        const y = a[1] + t * (b[1] - a[1]);
-        expect(y).toBeGreaterThan(2.7 + 0.25 - 1e-6);
-        expect(y).toBeLessThan(3.7 - 0.25 + 1e-6);
+      if ((a[1] - 4.2) * (b[1] - 4.2) <= 0 && a[1] !== b[1]) {
+        const t = (4.2 - a[1]) / (b[1] - a[1]);
+        const x = a[0] + t * (b[0] - a[0]);
+        expect(x).toBeGreaterThan(2.5 + 0.25 - 1e-6);
+        expect(x).toBeLessThan(3.4 - 0.25 + 1e-6);
         crossed = true;
       }
     }
     expect(crossed).toBe(true);
   });
 
-  it('从客厅任意可站点都能走到床边', () => {
+  it('从玄关、客厅、卫生间、书房、阳台都能走到床边', () => {
     const pf = make();
-    const starts: Vec2[] = [[1.3, 0.8], [4.2, 3.9], [2.65, 2.2], [3.8, 0.9], [5.6, 3.4]];
+    const starts: Vec2[] = [[1.1, 2.0], [3.3, 2.7], [6.8, 2.7], [8.2, 0.8], [1.5, 5.0], [7.6, 5.6], [9.4, 3.1], [9.7, 5.0]];
     for (const s of starts) {
       const res = pf.findPath(s, approachOf('bed'));
       expect(res.ok, `起点 ${s}`).toBe(true);
@@ -78,35 +78,49 @@ describe('寻路', () => {
     }
   });
 
-  it('走到电脑椅后方站位：不穿椅子和桌子', () => {
+  it('从入户门走到书房电脑椅后方站位：不穿椅子和桌子', () => {
     const pf = make();
-    const res = pf.findPath([1.3, 3.7], approachOf('desk'));
+    const res = pf.findPath([1.3, 3.5], approachOf('desk'));
     expect(res.ok).toBe(true);
     assertClear(pf, res.path);
   });
 
-  it('遇阻挡会绕行：在电视柜和电脑椅之间加障碍，仍能到达且路更长', () => {
-    const base = make().findPath([2.7, 0.9], [4.2, 3.6]);
-    // 堵住 x=3.6～4.6、y=1.6～2.8 的通道
-    const block: Obstacle = { id: 'box', kind: 'furniture', cx: 4.1, cy: 2.2, hw: 0.5, hh: 0.6, rot: 0 };
+  it('客厅走到阳台：只能从玻璃门旁的通道过，不穿玻璃', () => {
+    const pf = make();
+    const res = pf.findPath([4.9, 2.95], [9.7, 5.0]);
+    expect(res.ok).toBe(true);
+    assertClear(pf, res.path);
+    for (let i = 1; i < res.path.length; i++) {
+      const [a, b] = [res.path[i - 1], res.path[i]];
+      if ((a[0] - 8.8) * (b[0] - 8.8) <= 0 && a[0] !== b[0]) {
+        const y = a[1] + ((8.8 - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+        expect(y).toBeGreaterThan(2.6 + 0.25 - 1e-6);
+        expect(y).toBeLessThan(3.6 - 0.25 + 1e-6);
+      }
+    }
+  });
+
+  it('遇阻挡会绕行：在玄关和客厅之间放个障碍，仍能到达且路更长', () => {
+    const base = make().findPath([3.3, 2.7], [1.1, 2.0]);
+    const block: Obstacle = { id: 'box', kind: 'furniture', cx: 2.2, cy: 2.35, hw: 0.2, hh: 0.2, rot: 0 };
     const pf = make([block]);
-    const res = pf.findPath([2.7, 0.9], [4.2, 3.6]);
+    const res = pf.findPath([3.3, 2.7], [1.1, 2.0]);
     expect(res.ok).toBe(true);
     for (let i = 1; i < res.path.length; i++) expect(segmentHitsObstacle(block, res.path[i - 1], res.path[i], 0.25)).toBe(false);
-    expect(pathLength(res.path)).toBeGreaterThanOrEqual(pathLength(base.path) - 1e-6);
+    expect(pathLength(res.path)).toBeGreaterThan(pathLength(base.path) + 0.1);
   });
 
   it('无解：终点在衣柜里 → goal_blocked', () => {
-    const res = make().findPath([2.65, 2.2], item('wardrobe').position);
+    const res = make().findPath([3.3, 2.7], item('wardrobe').position);
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('goal_blocked');
-    expect(res.path).toEqual([[2.65, 2.2]]);
+    expect(res.path).toEqual([[3.3, 2.7]]);
   });
 
-  it('无解：门洞被堵死 → no_route，不穿墙', () => {
-    // 只填住门洞本身（x 5.9～6.1、y 2.6～3.8），不碰床边站位
-    const plug: Obstacle = { id: 'plug', kind: 'furniture', cx: 6, cy: 3.2, hw: 0.1, hh: 0.6, rot: 0 };
-    const res = make([plug]).findPath([2.65, 2.2], approachOf('bed'));
+  it('无解：卧室门洞被堵死 → no_route，不穿墙', () => {
+    // 只填住门洞本身（x 2.35～3.55、y 4.1～4.3），不碰床边站位
+    const plug: Obstacle = { id: 'plug', kind: 'furniture', cx: 2.95, cy: 4.2, hw: 0.6, hh: 0.1, rot: 0 };
+    const res = make([plug]).findPath([3.3, 2.7], approachOf('bed'));
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('no_route');
   });

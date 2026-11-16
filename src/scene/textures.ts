@@ -34,6 +34,9 @@ const FLOOR_STYLES: Record<string, FloorStyle> = {
   wood_warm: { base: [205, 166, 127], jitter: 6, plank: true },
   tile: { base: [228, 226, 220], jitter: 4, plank: false },
   carpet: { base: [196, 186, 204], jitter: 6, plank: false },
+  // 玄关：暖灰石材砖；阳台：偏深、偏红的户外防腐木，和屋内浅木地板拉开
+  stone: { base: [206, 198, 186], jitter: 5, plank: false },
+  deck: { base: [168, 122, 86], jitter: 9, plank: true },
 };
 
 const cache = new Map<string, THREE.CanvasTexture>();

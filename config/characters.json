@@ -7,7 +7,7 @@
       "height": 1.2,
       "model": "assets/models/xiaoxiao.glb",
       "model_type": "gltf",
-      "spawn": [2.65, 2.2],
+      "spawn": [3.3, 2.7],
       "palette": {
         "hair": "#17161b",
         "skin": "#f8e1d4",
@@ -25,7 +25,7 @@
       "height": 1.25,
       "model": "assets/models/shuaishuai.glb",
       "model_type": "gltf",
-      "spawn": [2.65, 2.2],
+      "spawn": [3.3, 2.7],
       "palette": {
         "hair": "#1a1a1e",
         "skin": "#f6dccb",
