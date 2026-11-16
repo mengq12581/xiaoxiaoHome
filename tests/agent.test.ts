@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterAgent, angleDiff, type AgentState, type SeatPose } from '../src/character/agent';
 import { createBareRig } from '../src/character/rig';
-import { Pathfinder, furnitureObstacles, wallObstacles } from '../src/nav/pathfinder';
+import { createPathfinder } from '../src/nav/pathfinder';
 import { anchorPose, localToPlan } from '../src/scene/layout';
 import type { Vec2 } from '../src/config/types';
 import { readRawConfig } from './helpers';
 
 const raw = readRawConfig();
 const pf = () =>
-  new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [...wallObstacles(raw.rooms), ...furnitureObstacles(raw.furniture.items)]);
+  createPathfinder(raw.rooms, raw.furniture.items);
 
 function seatOf(itemId: string): SeatPose {
   const it = raw.furniture.items.find((i: { id: string }) => i.id === itemId);

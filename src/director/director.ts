@@ -315,7 +315,8 @@ export class Director {
     return {
       state,
       spec,
-      minDwell: state.min_dwell ?? spec.min_dwell,
+      // 总开关关掉时（整体验收）最短停留一律按 0：新状态来了立刻切，不用等
+      minDwell: this.cfg.min_dwell_enabled === false ? 0 : (state.min_dwell ?? spec.min_dwell),
       priority,
       startedAt: now,
       actingSince: null,

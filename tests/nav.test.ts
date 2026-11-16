@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Pathfinder,
+  createPathfinder,
   furnitureObstacles,
   pathLength,
   segmentHitsObstacle,
@@ -13,7 +14,7 @@ import { readRawConfig } from './helpers';
 
 const raw = readRawConfig();
 const obstacles = () => [...wallObstacles(raw.rooms), ...furnitureObstacles(raw.furniture.items)];
-const make = (extra: Obstacle[] = []) => new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [...obstacles(), ...extra]);
+const make = (extra: Obstacle[] = []) => createPathfinder(raw.rooms, raw.furniture.items, extra);
 const item = (id: string) => raw.furniture.items.find((i: { id: string }) => i.id === id);
 const approachOf = (id: string) => {
   const it = item(id);
@@ -121,6 +122,36 @@ describe('寻路', () => {
     // 只填住门洞本身（x 2.35～3.55、y 4.1～4.3），不碰床边站位
     const plug: Obstacle = { id: 'plug', kind: 'furniture', cx: 2.95, cy: 4.2, hw: 0.6, hh: 0.1, rot: 0 };
     const res = make([plug]).findPath([3.3, 2.7], approachOf('bed'));
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('no_route');
+  });
+
+  it('路线不绕远：贴着家具角走最短折线，不被手工导航点牵着走', () => {
+    const pf = make();
+    const len = (a: Vec2, b: Vec2) => {
+      const r = pf.findPath(a, b);
+      expect(r.ok).toBe(true);
+      assertClear(pf, r.path);
+      return pathLength(r.path);
+    };
+    const sofa = approachOf('sofa');
+    const tea = approachOf('coffee_table');
+    const desk = approachOf('desk');
+    const bed = approachOf('bed');
+    // 茶几旁 → 沙发前：绕茶几一个角就到，不用兜到客厅另一头（原来 4.48 米）
+    expect(len(tea, sofa)).toBeLessThan(3.0);
+    // 书桌 → 沙发：出书房门后直奔沙发（原来 8.17 米）
+    expect(len(desk, sofa)).toBeLessThan(6.2);
+    // 床边 → 书桌：出卧室门、贴着电视柜下沿过、进书房门（原来 10.27 米）
+    expect(len(bed, desk)).toBeLessThan(9.3);
+    // 沙发 → 书房窗边（原来 8.42 米）
+    expect(len(sofa, [7.9, 6.0])).toBeLessThan(6.3);
+  });
+
+  it('绕行点只在房间里：不会从屋外绕路（阳台没有墙，入户门是敞开的）', () => {
+    // 把客厅通阳台的通道堵死：阳台与屋内就不连通了，不能绕到屋外从入户门进来
+    const plug: Obstacle = { id: 'plug', kind: 'furniture', cx: 8.8, cy: 3.1, hw: 0.1, hh: 0.6, rot: 0 };
+    const res = make([plug]).findPath([9.4, 5.0], [1.1, 2.0]);
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('no_route');
   });

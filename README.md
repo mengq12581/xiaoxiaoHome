@@ -163,6 +163,7 @@ tools/character/  三视图 → 角色模型的建模流水线（Python，仅重
 
 | 日期 | 里程碑 | 能演示什么 | 截图 |
 | --- | --- | --- | --- |
+| 2026-11-16 | 走位路径优化 + 暂时关闭最短停留（docs/验收问题.md C12、C13） | 寻路改为可视图最短路，贴着家具角走最短折线；`config/activities.json` 的 `min_dwell_enabled: false` 让新状态立刻生效，方便整体验收（改回 `true` 恢复等待） | `docs/screenshots/path-01-desk-to-sofa.png` |
 | 2026-11-16 | 户型改版（docs/验收问题.md C11） | 六个区域：玄关、客厅、卫生间、卧室、书房、阳台；入户门在左；客厅通阳台的大玻璃门与通道、书房落地窗；卫生间三段式；阳台花草与圆桌椅；书架和电脑桌进书房、电视靠墙 | `docs/screenshots/layout2-00-top.png` 正上方俯视；`layout2-01-default` 默认视角；`layout2-02-bathroom` 卫生间；`layout2-03-balcony` 阳台；`layout2-04-study` 书房 |
 | 2026-11-12 | 帅帅三视图换版 | 按客户新版三视图替换 `assets/shuaishuai_q_turnaround.jpg`（双手下垂、不再插兜）；`shuaishuai.glb` 暂未按新图重建，画面仍是旧版帅帅，详见 docs/验收问题.md C9 | — |
 | 2026-11-11 | M1 场景与相机 | 按配置生成一室一厅（真实门洞、落地窗、卧室窗、11 件家具）；自由环绕 + 滚轮缩放；挡视线的墙自动透明留轮廓；改配置即生效，配置错误启动即报错 | `docs/screenshots/m1-01-default.png` 默认视角；`m1-02`～`m1-04` 另外三个方向；`m1-05-top` 俯视；`m1-06-far-low` 最远最低；`m1-07-near` 最近；`m1-08-sofa-moved` 改沙发坐标；`m1-09-room-added` 加房间 |

@@ -5,7 +5,7 @@ import { Director } from '../src/director/director';
 import { StagePerformer } from '../src/director/stagePerformer';
 import { LayoutStore } from '../src/layout/layoutStore';
 import { StageLayout } from '../src/layout/stageLayout';
-import { Pathfinder, furnitureObstacles, pointInObstacle, wallObstacles, CHARACTER_RADIUS } from '../src/nav/pathfinder';
+import { createPathfinder, furnitureObstacles, pointInObstacle, CHARACTER_RADIUS } from '../src/nav/pathfinder';
 import { indexAnchors, type AnchorIndex } from '../src/scene/anchors';
 import type { ActivitiesConfig, FurnitureItem, RoomsConfig, Vec2 } from '../src/config/types';
 import { readRawConfig } from './helpers';
@@ -16,7 +16,7 @@ function stage() {
   const items = raw.furniture.items as FurnitureItem[];
   const rooms = raw.rooms as RoomsConfig;
   const activities = raw.activities as ActivitiesConfig;
-  const pf = new Pathfinder(rooms.nav.nodes, rooms.nav.edges, [...wallObstacles(rooms), ...furnitureObstacles(items)]);
+  const pf = createPathfinder(rooms, items);
   const warnings: string[] = [];
   const agent = new CharacterAgent(createBareRig('t'), pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
   let anchors: AnchorIndex = indexAnchors(items);

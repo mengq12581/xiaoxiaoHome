@@ -103,16 +103,36 @@ export function segmentHitsObstacle(o: Obstacle, a: Vec2, b: Vec2, inflate: numb
 
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
+/** 可走区域：各房间（含阳台）的矩形范围 */
+export interface WalkArea {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** 绕障碍时离膨胀后的边角再多留的余量（米），免得贴着家具角擦过去 */
+const CORNER_MARGIN = 0.06;
+
 export class Pathfinder {
   /** 被障碍挡住而停用的配置边 / 节点（调试、日志用） */
   readonly blockedEdges: [number, number][] = [];
   readonly blockedNodes: number[] = [];
+  /** 寻路用的全部路点：可用的配置导航点 + 障碍物四角外侧的绕行点 */
+  private waypoints: Vec2[] = [];
+  /** 路点两两之间能否直走（按需计算并缓存，障碍变了就清空） */
+  private sight = new Map<number, boolean>();
 
+  /**
+   * @param walkable 可走区域（房间范围）。给了它才会在障碍物四角生成绕行点——
+   *   绕行点必须落在房间里，否则会从屋外绕路。不给则只用配置里的导航点。
+   */
   constructor(
     private nodes: Vec2[],
     private edges: [number, number][],
     private obstacles: Obstacle[],
     private radius = CHARACTER_RADIUS,
+    private walkable: WalkArea[] | null = null,
   ) {
     this.refresh();
   }
@@ -134,6 +154,26 @@ export class Pathfinder {
         this.blockedEdges.push([a, b]);
       }
     }
+    const blocked = new Set(this.blockedNodes);
+    this.waypoints = this.nodes.filter((_, i) => !blocked.has(i));
+    if (this.walkable) {
+      for (const o of this.obstacles) {
+        const r = (o.rot * Math.PI) / 180;
+        const hx = o.hw + this.radius + CORNER_MARGIN;
+        const hy = o.hh + this.radius + CORNER_MARGIN;
+        for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const lx = sx * hx;
+          const ly = sy * hy;
+          const p: Vec2 = [o.cx + lx * Math.cos(r) - ly * Math.sin(r), o.cy + lx * Math.sin(r) + ly * Math.cos(r)];
+          if (this.inWalkable(p) && this.isFree(p)) this.waypoints.push(p);
+        }
+      }
+    }
+    this.sight.clear();
+  }
+
+  private inWalkable(p: Vec2): boolean {
+    return !this.walkable || this.walkable.some((a) => p[0] >= a.x0 && p[0] <= a.x1 && p[1] >= a.y0 && p[1] <= a.y1);
   }
 
   isFree(p: Vec2, ignore: Set<string> = new Set()): boolean {
@@ -144,46 +184,49 @@ export class Pathfinder {
     return !this.obstacles.some((o) => !ignore.has(o.id) && segmentHitsObstacle(o, a, b, this.radius));
   }
 
+  /** 两个路点之间能否直走（带缓存） */
+  private sees(i: number, j: number): boolean {
+    const key = i < j ? i * 100000 + j : j * 100000 + i;
+    let v = this.sight.get(key);
+    if (v === undefined) {
+      v = this.isClear(this.waypoints[i], this.waypoints[j]);
+      this.sight.set(key, v);
+    }
+    return v;
+  }
+
+  /**
+   * 最短路：在「起点、终点、全部路点」的可视图上做 A*（两点之间能直走就有边）。
+   * 路点包含障碍物四角外侧的绕行点，所以绕家具、过门洞走的是几何上最短的折线，
+   * 不再被几个手工导航点牵着绕远。
+   */
   findPath(start: Vec2, goal: Vec2): PathResult {
     if (!this.isFree(goal)) return { ok: false, path: [start], reason: 'goal_blocked' };
     // 起点若落在障碍里（比如刚从座位起身），从它出发的线段忽略那些障碍
     const startIgnore = new Set(this.obstacles.filter((o) => pointInObstacle(o, start, this.radius)).map((o) => o.id));
-    const clearFrom = (a: Vec2, b: Vec2, fromStart: boolean) => this.isClear(a, b, fromStart ? startIgnore : undefined);
+    if (this.isClear(start, goal, startIgnore)) return { ok: true, path: [start, goal] };
 
-    if (clearFrom(start, goal, true)) return { ok: true, path: [start, goal] };
-
-    // 图：0..n-1 配置节点，n = 起点，n+1 = 终点
-    const n = this.nodes.length;
+    // 图：0..n-1 路点，n = 起点，n+1 = 终点
+    const n = this.waypoints.length;
     const S = n;
     const G = n + 1;
-    const pts: Vec2[] = [...this.nodes, start, goal];
-    const adj: number[][] = pts.map(() => []);
-    const blockedNode = new Set(this.blockedNodes);
-    const blockedEdge = new Set(this.blockedEdges.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`));
-    for (const [a, b] of this.edges) {
-      if (blockedEdge.has(`${Math.min(a, b)}-${Math.max(a, b)}`)) continue;
-      adj[a].push(b);
-      adj[b].push(a);
-    }
-    let startLinked = false;
-    for (let i = 0; i < n; i++) {
-      if (blockedNode.has(i)) continue;
-      if (clearFrom(start, pts[i], true)) {
-        adj[S].push(i);
-        adj[i].push(S);
-        startLinked = true;
-      }
-      if (this.isClear(pts[i], goal)) {
-        adj[G].push(i);
-        adj[i].push(G);
-      }
-    }
-    if (!startLinked) return { ok: false, path: [start], reason: 'start_blocked' };
+    const pts: Vec2[] = [...this.waypoints, start, goal];
+    const fromStart = this.waypoints.map((p) => this.isClear(start, p, startIgnore));
+    if (!fromStart.some(Boolean)) return { ok: false, path: [start], reason: 'start_blocked' };
+    const toGoal = this.waypoints.map((p) => this.isClear(p, goal));
+    const linked = (a: number, b: number): boolean => {
+      if (a === b) return false;
+      if (a > b) [a, b] = [b, a];
+      if (b === G) return a === S ? false : toGoal[a];
+      if (b === S) return fromStart[a];
+      return this.sees(a, b);
+    };
 
     // A*
     const g = new Array(pts.length).fill(Infinity);
     const prev = new Array<number>(pts.length).fill(-1);
     const open = new Set<number>([S]);
+    const closed = new Set<number>();
     g[S] = 0;
     const f = (i: number) => g[i] + dist(pts[i], goal);
     while (open.size) {
@@ -191,13 +234,15 @@ export class Pathfinder {
       for (const i of open) if (cur < 0 || f(i) < f(cur)) cur = i;
       if (cur === G) break;
       open.delete(cur);
-      for (const nb of adj[cur]) {
+      closed.add(cur);
+      for (let nb = 0; nb < pts.length; nb++) {
+        if (closed.has(nb)) continue;
         const cand = g[cur] + dist(pts[cur], pts[nb]);
-        if (cand < g[nb] - EPS) {
-          g[nb] = cand;
-          prev[nb] = cur;
-          open.add(nb);
-        }
+        if (cand >= g[nb] - EPS) continue;
+        if (!linked(cur, nb)) continue;
+        g[nb] = cand;
+        prev[nb] = cur;
+        open.add(nb);
       }
     }
     if (!Number.isFinite(g[G])) return { ok: false, path: [start], reason: 'no_route' };
@@ -222,6 +267,15 @@ export class Pathfinder {
     }
     return out;
   }
+}
+
+/** 按配置建寻路器：墙 + 家具为障碍，房间范围为可走区域（带绕行点） */
+export function createPathfinder(rooms: RoomsConfig, items: FurnitureItem[], extra: Obstacle[] = []): Pathfinder {
+  const areas: WalkArea[] = rooms.rooms.map((r) => {
+    const [[ax, ay], [bx, by]] = r.bounds;
+    return { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) };
+  });
+  return new Pathfinder(rooms.nav.nodes, rooms.nav.edges as [number, number][], [...wallObstacles(rooms), ...furnitureObstacles(items), ...extra], CHARACTER_RADIUS, areas);
 }
 
 export function pathLength(path: Vec2[]): number {
