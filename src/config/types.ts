@@ -102,6 +102,11 @@ export interface ActivitiesConfig {
   activities: Record<string, ActivitySpec>;
   quiet_hours: [string, string];
   idle_after_sec: number;
+  /**
+   * 最短停留（min_dwell）总开关，默认 true。false = 整体验收用：所有活动的最短停留按 0 算，
+   * 新状态一来立刻切换，不用等上一件事演满；各活动里写的 min_dwell 数值保留，改回 true 即恢复。
+   */
+  min_dwell_enabled?: boolean;
   /** 空闲池冷却：同一活动结束后多少秒内不再被挑中（默认 90） */
   idle_cooldown_sec?: number;
   idle_pool_override?: Record<string, Record<string, number>>;

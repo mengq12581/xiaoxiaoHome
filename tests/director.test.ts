@@ -206,3 +206,40 @@ describe('导演状态机', () => {
     expect(s.director.activeCharacter).toBe('xiaoxiao');
   });
 });
+
+describe('最短停留总开关（整体验收时关掉）', () => {
+  function setupNoDwell() {
+    const clock = { t: 0 };
+    const performer = new FakePerformer(() => clock.t, 5);
+    const director = new Director({ ...activities, min_dwell_enabled: false }, { now: () => clock.t });
+    director.register('xiaoxiao', performer, true);
+    const run = (seconds: number) => {
+      const end = clock.t + seconds;
+      while (clock.t < end - 1e-9) {
+        clock.t = Math.min(end, clock.t + 0.1);
+        director.update();
+      }
+    };
+    const st = (activity: string): StateObject => ({ activity, source: 'sim:click', since: `t${clock.t}` });
+    return { clock, performer, director, run, st };
+  }
+
+  it('关掉后：正在演的活动不用演满，新状态来了立刻切过去，不排队', () => {
+    const s = setupNoDwell();
+    s.director.setState('xiaoxiao', s.st('watch_tv'));
+    s.run(6); // 走到位（5 秒）并开始演 1 秒；看电视的 min_dwell 是 45 秒
+    expect(s.director.snapshot()).toMatchObject({ phase: 'ACTING', activity: 'watch_tv', minDwell: 0, dwellLeft: 0 });
+    expect(s.director.setState('xiaoxiao', s.st('write_notes'))).not.toBe('queued');
+    s.run(0.2);
+    expect(s.performer.last).toBe('write_notes');
+    expect(s.director.snapshot().queued).toBeNull();
+  });
+
+  it('关掉后：状态里自带的 min_dwell 也不生效；配置里的数值原样保留', () => {
+    const s = setupNoDwell();
+    s.director.setState('xiaoxiao', { ...s.st('write_notes'), min_dwell: 90 });
+    s.run(6);
+    expect(s.director.snapshot().dwellLeft).toBe(0);
+    expect(activities.activities.write_notes.min_dwell).toBe(90);
+  });
+});

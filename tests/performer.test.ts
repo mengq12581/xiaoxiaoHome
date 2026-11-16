@@ -3,7 +3,7 @@ import { CharacterAgent, type AgentState } from '../src/character/agent';
 import { createBareRig } from '../src/character/rig';
 import { Director } from '../src/director/director';
 import { StagePerformer } from '../src/director/stagePerformer';
-import { Pathfinder, furnitureObstacles, wallObstacles } from '../src/nav/pathfinder';
+import { createPathfinder } from '../src/nav/pathfinder';
 import { indexAnchors } from '../src/scene/anchors';
 import type { ActivitiesConfig, Vec2 } from '../src/config/types';
 import { readRawConfig } from './helpers';
@@ -15,7 +15,7 @@ const activities = raw.activities as ActivitiesConfig;
 function stage(patch?: (acts: ActivitiesConfig) => void) {
   const acts: ActivitiesConfig = structuredClone(activities);
   patch?.(acts);
-  const pf = new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [...wallObstacles(raw.rooms), ...furnitureObstacles(raw.furniture.items)]);
+  const pf = createPathfinder(raw.rooms, raw.furniture.items);
   const warnings: string[] = [];
   const rig = createBareRig('t');
   const agent = new CharacterAgent(rig, pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
@@ -171,11 +171,7 @@ describe('导演 + 演员 + 走位（无画面联调）', () => {
   it('去不了的地方（床被堵死）：原地停下、记警告、回落到站姿，不穿墙', () => {
     const s = stage();
     // 把卧室门堵上
-    const pf = new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [
-      ...wallObstacles(raw.rooms),
-      ...furnitureObstacles(raw.furniture.items),
-      { id: 'block', kind: 'furniture', cx: 2.95, cy: 4.2, hw: 0.6, hh: 0.1, rot: 0 },
-    ]);
+    const pf = createPathfinder(raw.rooms, raw.furniture.items, [{ id: 'block', kind: 'furniture', cx: 2.95, cy: 4.2, hw: 0.6, hh: 0.1, rot: 0 }]);
     const agent = new CharacterAgent(createBareRig('t'), pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && s.warnings.push(m) });
     const performer = new StagePerformer(agent, pf, () => s.anchors, () => raw.rooms.nav.nodes, { set: () => {} });
     const clock = { t: 0 };

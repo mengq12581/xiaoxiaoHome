@@ -88,7 +88,8 @@ export class IdlePool {
     const a = this.cfg.activities[activity];
     if (!a) return 0;
     const [lo, hi] = a.duration;
-    return Math.max(a.min_dwell, lo + (hi - lo) * this.rand());
+    const floor = this.cfg.min_dwell_enabled === false ? 0 : a.min_dwell;
+    return Math.max(floor, lo + (hi - lo) * this.rand());
   }
 
   /**

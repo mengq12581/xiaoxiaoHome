@@ -11,7 +11,7 @@ import { CameraRig } from './scene/cameraRig';
 import { createPipeline, createRenderer, setupLighting } from './scene/lookdev';
 import { WallFader } from './scene/wallFade';
 import { indexAnchors } from './scene/anchors';
-import { Pathfinder, furnitureObstacles, wallObstacles } from './nav/pathfinder';
+import { createPathfinder } from './nav/pathfinder';
 import { buildCharacter } from './character/model';
 import { preloadGltfCharacter } from './character/gltfModel';
 import { CharacterAgent, type LogFn } from './character/agent';
@@ -65,10 +65,7 @@ function boot(cfg: AppConfig) {
   scene.add(character.root);
 
   // 寻路与走位
-  const pathfinder = new Pathfinder(cfg.rooms.nav.nodes, cfg.rooms.nav.edges, [
-    ...wallObstacles(cfg.rooms),
-    ...furnitureObstacles(cfg.furniture.items),
-  ]);
+  const pathfinder = createPathfinder(cfg.rooms, cfg.furniture.items);
   if (pathfinder.blockedNodes.length || pathfinder.blockedEdges.length) {
     flog.write('warn', '[nav] 以下导航点/边被墙或家具挡住，已停用', {
       nodes: pathfinder.blockedNodes,
