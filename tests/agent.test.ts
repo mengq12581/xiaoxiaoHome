@@ -43,7 +43,7 @@ function run(agent: CharacterAgent, seconds: number, onFrame?: (t: number) => vo
 describe('角色走位', () => {
   it('从客厅走到卧室床边：逐帧连续、每帧位移 ≤ 速度×dt、全程不进障碍、最终到达', () => {
     const p = pf();
-    const agent = new CharacterAgent(createBareRig('t'), p, [2.65, 2.2]);
+    const agent = new CharacterAgent(createBareRig('t'), p, [3.3, 2.7]);
     const goal = seatOf('bed').approach;
     agent.walkTo(goal);
     let inside = 0;
@@ -59,7 +59,7 @@ describe('角色走位', () => {
   });
 
   it('坐到电脑椅：走到椅后站位 → 转身 → 1.2 秒坐下，最终坐在交互点、面朝桌子', () => {
-    const agent = new CharacterAgent(createBareRig('t'), pf(), [2.65, 2.2]);
+    const agent = new CharacterAgent(createBareRig('t'), pf(), [3.3, 2.7]);
     const seat = seatOf('desk');
     agent.sitAt(seat);
     const tr = run(agent, 20);
@@ -72,7 +72,7 @@ describe('角色走位', () => {
   });
 
   it('坐着时下新指令：先起身回到站位，再走过去', () => {
-    const agent = new CharacterAgent(createBareRig('t'), pf(), [2.65, 2.2]);
+    const agent = new CharacterAgent(createBareRig('t'), pf(), [3.3, 2.7]);
     agent.sitAt(seatOf('desk'));
     run(agent, 20);
     agent.sitAt(seatOf('sofa'));
@@ -82,12 +82,12 @@ describe('角色走位', () => {
   });
 
   it('坐下过程中来新指令：排队，坐好后再执行', () => {
-    const agent = new CharacterAgent(createBareRig('t'), pf(), [2.65, 2.2]);
+    const agent = new CharacterAgent(createBareRig('t'), pf(), [3.3, 2.7]);
     agent.sitAt(seatOf('desk'));
     let issued = false;
     const tr = run(agent, 40, () => {
       if (!issued && agent.state === 'sitting_down') {
-        agent.walkTo([4.2, 3.6]);
+        agent.walkTo([6.8, 2.7]);
         issued = true;
         expect(agent.state).toBe('sitting_down');
       }
@@ -95,14 +95,14 @@ describe('角色走位', () => {
     expect(issued).toBe(true);
     // 坐好的那一帧立刻接排队指令起身，所以帧末观察不到 seated
     expect(tr.states).toEqual(['walking', 'turning', 'sitting_down', 'standing_up', 'walking', 'idle']);
-    expect(agent.position[0]).toBeCloseTo(4.2, 5);
+    expect(agent.position[0]).toBeCloseTo(6.8, 5);
   });
 
   it('站着待机不是呆的：会眨眼、重心左右轻摆、呼吸起伏', () => {
     const rig = createBareRig('t');
     const eyes: number[] = [];
     rig.setEyes = (s) => eyes.push(s);
-    const agent = new CharacterAgent(rig, pf(), [2.65, 2.2]);
+    const agent = new CharacterAgent(rig, pf(), [3.3, 2.7]);
     const xs: number[] = [];
     const breath: number[] = [];
     run(agent, 12, () => {
@@ -113,12 +113,12 @@ describe('角色走位', () => {
     expect(eyes[eyes.length - 1]).toBe(0); // 眨完会睁开
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.01);
     expect(Math.max(...breath) - Math.min(...breath)).toBeGreaterThan(0.02);
-    expect(agent.position).toEqual([2.65, 2.2]); // 摆动只在身体上，不挪位置
+    expect(agent.position).toEqual([3.3, 2.7]); // 摆动只在身体上，不挪位置
   });
 
   it('坐姿松弛：上身前倾、膝盖并拢、两腿一前一后、手臂不对称', () => {
     const rig = createBareRig('t');
-    const agent = new CharacterAgent(rig, pf(), [2.65, 2.2]);
+    const agent = new CharacterAgent(rig, pf(), [3.3, 2.7]);
     agent.sitAt(seatOf('sofa'));
     run(agent, 30);
     expect(agent.state).toBe('seated');
@@ -131,13 +131,13 @@ describe('角色走位', () => {
 
   it('寻路无解：原地不动，写一条警告', () => {
     const logs: string[] = [];
-    const agent = new CharacterAgent(createBareRig('t'), pf(), [2.65, 2.2], -90, {
+    const agent = new CharacterAgent(createBareRig('t'), pf(), [3.3, 2.7], -90, {
       log: (level, msg) => logs.push(`${level}:${msg}`),
     });
     const wardrobe = raw.furniture.items.find((i: { id: string }) => i.id === 'wardrobe').position;
     agent.walkTo(wardrobe);
     run(agent, 2);
-    expect(agent.position).toEqual([2.65, 2.2]);
+    expect(agent.position).toEqual([3.3, 2.7]);
     expect(agent.state).toBe('idle');
     expect(logs).toContain('warn:寻路失败，原地停下');
   });

@@ -1,6 +1,6 @@
 # 小家 3D
 
-本地离线运行的 3D 一室一厅，Q 版笑笑住在里面。需求见 [docs/PRD.md](docs/PRD.md)，验收见 [docs/验收清单.md](docs/验收清单.md)，执行中的约定与变更见 [docs/验收问题.md](docs/验收问题.md)。
+本地离线运行的 3D 小家（玄关、客厅、卧室、书房、卫生间、阳台），Q 版笑笑住在里面。需求见 [docs/PRD.md](docs/PRD.md)，验收见 [docs/验收清单.md](docs/验收清单.md)，执行中的约定与变更见 [docs/验收问题.md](docs/验收问题.md)。
 
 ## 怎么跑
 
@@ -163,6 +163,7 @@ tools/character/  三视图 → 角色模型的建模流水线（Python，仅重
 
 | 日期 | 里程碑 | 能演示什么 | 截图 |
 | --- | --- | --- | --- |
+| 2026-11-16 | 户型改版（docs/验收问题.md C11） | 六个区域：玄关、客厅、卫生间、卧室、书房、阳台；入户门在左；客厅通阳台的大玻璃门与通道、书房落地窗；卫生间三段式；阳台花草与圆桌椅；书架和电脑桌进书房、电视靠墙 | `docs/screenshots/layout2-00-top.png` 正上方俯视；`layout2-01-default` 默认视角；`layout2-02-bathroom` 卫生间；`layout2-03-balcony` 阳台；`layout2-04-study` 书房 |
 | 2026-11-12 | 帅帅三视图换版 | 按客户新版三视图替换 `assets/shuaishuai_q_turnaround.jpg`（双手下垂、不再插兜）；`shuaishuai.glb` 暂未按新图重建，画面仍是旧版帅帅，详见 docs/验收问题.md C9 | — |
 | 2026-11-11 | M1 场景与相机 | 按配置生成一室一厅（真实门洞、落地窗、卧室窗、11 件家具）；自由环绕 + 滚轮缩放；挡视线的墙自动透明留轮廓；改配置即生效，配置错误启动即报错 | `docs/screenshots/m1-01-default.png` 默认视角；`m1-02`～`m1-04` 另外三个方向；`m1-05-top` 俯视；`m1-06-far-low` 最远最低；`m1-07-near` 最近；`m1-08-sofa-moved` 改沙发坐标；`m1-09-room-added` 加房间 |
 | 2026-11-12 | M2 整改（笑笑形象、坐姿、待机、接触阴影、家具圆角与材质） | 按 docs/验收问题.md C4/C5 整改并复验 M2；帅帅占位不变 | `m2-b-turnaround` 新三视图；`m2-i-blink` 眨眼帧；`m2-h-seated-pose` 坐姿三视图；`m2-e-seated-sofa` 沙发上；`m2-d-seated-desk` 电脑椅上；`m2-a-front` 正面（脚下接触阴影）；`m2-j-door-fillet` 门洞圆角与木纹 |

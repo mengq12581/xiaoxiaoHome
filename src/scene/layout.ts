@@ -30,6 +30,8 @@ export interface WallEdge {
   from: Vec2;
   to: Vec2;
   height: number;
+  /** 这一面不砌墙（开放边界） */
+  open: boolean;
 }
 
 export interface Opening {
@@ -86,7 +88,8 @@ export function roomEdges(room: RoomSpec, defaultHeight: number): WallEdge[] {
   const heightOf = (id: string) => room.walls?.find((w) => w.id === id)?.height ?? defaultHeight;
   const mk = (side: Side, orient: Orient, c: number, a: number, b: number, inside: 1 | -1, from: Vec2, to: Vec2): WallEdge => {
     const id = `${room.id}_${side}`;
-    return { id, roomId: room.id, side, orient, c, a, b, inside, from, to, height: heightOf(id) };
+    const open = room.walls?.find((w) => w.id === id)?.open === true;
+    return { id, roomId: room.id, side, orient, c, a, b, inside, from, to, height: heightOf(id), open };
   };
   return [
     mk('bottom', 'h', y0, x0, x1, 1, [x0, y0], [x1, y0]),
@@ -98,7 +101,8 @@ export function roomEdges(room: RoomSpec, defaultHeight: number): WallEdge[] {
 
 export function allEdges(cfg: RoomsConfig): WallEdge[] {
   const h = cfg.wall_height ?? DEFAULT_WALL_HEIGHT;
-  return cfg.rooms.flatMap((r) => roomEdges(r, h));
+  // 室外区域（阳台）自己不生成墙；它与室内共用的那面墙由室内房间生成
+  return cfg.rooms.filter((r) => !r.outdoor).flatMap((r) => roomEdges(r, h));
 }
 
 /** 平面点在墙线上的沿墙坐标 */
@@ -190,7 +194,8 @@ export function computeWallLayout(cfg: RoomsConfig): WallLayout {
       const q = pts[i + 1];
       if (q - p < EPS) continue;
       const cover = lineEdges.filter((e) => e.a <= p + EPS && e.b >= q - EPS);
-      if (cover.length === 0) {
+      // 没有房间贴着这一段，或有一侧声明为开放边界 → 不砌墙
+      if (cover.length === 0 || cover.some((e) => e.open)) {
         current = null;
         continue;
       }

@@ -18,7 +18,7 @@ function stage(patch?: (acts: ActivitiesConfig) => void) {
   const pf = new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [...wallObstacles(raw.rooms), ...furnitureObstacles(raw.furniture.items)]);
   const warnings: string[] = [];
   const rig = createBareRig('t');
-  const agent = new CharacterAgent(rig, pf, [2.65, 2.2], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
+  const agent = new CharacterAgent(rig, pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
   const anchors = indexAnchors(raw.furniture.items);
   const shown: string[][] = [];
   const performer = new StagePerformer(agent, pf, () => anchors, () => raw.rooms.nav.nodes, { set: (p) => shown.push([...p]) });
@@ -174,9 +174,9 @@ describe('导演 + 演员 + 走位（无画面联调）', () => {
     const pf = new Pathfinder(raw.rooms.nav.nodes, raw.rooms.nav.edges, [
       ...wallObstacles(raw.rooms),
       ...furnitureObstacles(raw.furniture.items),
-      { id: 'block', kind: 'furniture', cx: 6, cy: 3.2, hw: 0.3, hh: 0.75, rot: 0 },
+      { id: 'block', kind: 'furniture', cx: 2.95, cy: 4.2, hw: 0.6, hh: 0.1, rot: 0 },
     ]);
-    const agent = new CharacterAgent(createBareRig('t'), pf, [2.65, 2.2], -90, { log: (l, m) => l === 'warn' && s.warnings.push(m) });
+    const agent = new CharacterAgent(createBareRig('t'), pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && s.warnings.push(m) });
     const performer = new StagePerformer(agent, pf, () => s.anchors, () => raw.rooms.nav.nodes, { set: () => {} });
     const clock = { t: 0 };
     const director = new Director(activities, { now: () => clock.t });
@@ -189,7 +189,7 @@ describe('导演 + 演员 + 走位（无画面联调）', () => {
       director.update();
     }
     expect(s.warnings.some((w) => w.includes('寻路失败'))).toBe(true);
-    expect(agent.position).toEqual([2.65, 2.2]);
+    expect(agent.position).toEqual([3.3, 2.7]);
     expect(director.snapshot().activity).toBe('idle_stand');
   });
 });

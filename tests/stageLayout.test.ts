@@ -18,7 +18,7 @@ function stage() {
   const activities = raw.activities as ActivitiesConfig;
   const pf = new Pathfinder(rooms.nav.nodes, rooms.nav.edges, [...wallObstacles(rooms), ...furnitureObstacles(items)]);
   const warnings: string[] = [];
-  const agent = new CharacterAgent(createBareRig('t'), pf, [2.65, 2.2], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
+  const agent = new CharacterAgent(createBareRig('t'), pf, [3.3, 2.7], -90, { log: (l, m) => l === 'warn' && warnings.push(m) });
   let anchors: AnchorIndex = indexAnchors(items);
   const shown: string[][] = [];
   const performer = new StagePerformer(agent, pf, () => anchors, () => rooms.nav.nodes, { set: (p) => shown.push([...p]) });
@@ -58,10 +58,10 @@ describe('拖家具：人物配合', () => {
   it('把沙发拖到客厅另一角：下一次看电视走到新位置，准确坐在新交互点上', () => {
     const s = stage();
     s.layout.beginDrag('sofa');
-    for (let y = 2.2; y <= 3.31; y += 0.05) s.layout.dragTo('sofa', [0.55, +y.toFixed(2)]);
+    for (let x = 4.9; x <= 6.51; x += 0.05) s.layout.dragTo('sofa', [+x.toFixed(2), 0.52]);
     expect(s.layout.endDrag()).toBe(true);
     const seat = s.anchors().seats.get('sofa:sofa_seat')!;
-    expect(near(seat.plan, [0.89, 3.3])).toBe(true); // 交互点跟着沙发走
+    expect(near(seat.plan, [6.5, 0.86])).toBe(true); // 交互点跟着沙发走
     s.send('watch_tv');
     expect(s.run(40, s.acting('watch_tv'))).toBe(true);
     expect(s.agent.state).toBe('seated');
@@ -80,9 +80,9 @@ describe('拖家具：人物配合', () => {
     s.layout.beginDrag('desk');
     expect(s.performer.isSuspended).toBe(true);
     expect(s.shown[s.shown.length - 1]).toEqual([]); // 屏幕微光收起
-    // 拖动持续 2 秒：桌椅一步步挪开，她在这期间站起来
+    // 拖动持续 2 秒：桌椅沿上墙一步步往右挪 0.4 米，她在这期间站起来
     for (let i = 1; i <= 24; i++) {
-      s.layout.dragTo('desk', [5.55, +(1.3 + i * 0.05).toFixed(2)]);
+      s.layout.dragTo('desk', [+(7.6 + (i * 0.4) / 24).toFixed(4), 7.38]);
       s.run(2 / 24);
     }
     expect(s.agent.state).toBe('idle');
@@ -91,7 +91,7 @@ describe('拖家具：人物配合', () => {
     s.layout.endDrag();
     expect(s.run(30, () => s.agent.state === 'seated')).toBe(true);
     const seat = s.anchors().seats.get('desk:desk_seat')!;
-    expect(near(seat.plan, [oldSeat.plan[0], oldSeat.plan[1] + 1.2])).toBe(true);
+    expect(near(seat.plan, [oldSeat.plan[0] + 0.4, oldSeat.plan[1]])).toBe(true);
     expect(near(s.agent.position, seat.plan, 0.001)).toBe(true);
     expect(s.states.slice(from)).toEqual(['standing_up', 'idle', 'walking', 'turning', 'sitting_down', 'seated']);
     s.run(2);
@@ -108,7 +108,7 @@ describe('拖家具：人物配合', () => {
     s.run(30, s.acting('watch_tv'));
     s.run(20);
     s.layout.beginDrag('sofa');
-    s.layout.dragTo('sofa', [0.55, 2.6]);
+    s.layout.dragTo('sofa', [5.3, 0.52]);
     s.layout.endDrag();
     s.run(30, () => s.agent.state === 'seated');
     s.run(1);
@@ -136,21 +136,21 @@ describe('拖家具：人物配合', () => {
 
   it('家具不能拖到她身上；拖动途中路被暂时堵死，她先停下，松手让开后接着走', () => {
     const s = stage();
-    expect(s.layout.dragTo('coffee_table', [2.65, 2.2])).not.toBeNull(); // 没 beginDrag 也安全
+    expect(s.layout.dragTo('coffee_table', [3.3, 2.7])).not.toBeNull(); // 没 beginDrag 也安全
     s.layout.beginDrag('coffee_table');
-    expect(s.layout.dragTo('coffee_table', [2.55, 2.2])).toBe('on_character');
+    expect(s.layout.dragTo('coffee_table', [3.2, 2.6])).toBe('on_character');
     s.layout.endDrag();
 
     // 去卧室睡觉，途中把床头柜拖到门洞正后方堵住
     s.send('sleep');
     s.run(1.5);
     s.layout.beginDrag('nightstand');
-    expect(s.layout.dragTo('nightstand', [6.3, 3.2])).toBeNull();
+    expect(s.layout.dragTo('nightstand', [2.95, 4.55])).toBeNull();
     s.run(6);
     expect(s.agent.state).toBe('idle'); // 走不通：停下等，不穿墙
     expect(s.agent.failed).toBe(false);
     expect(s.director.snapshot().activity).toBe('sleep');
-    expect(s.layout.dragTo('nightstand', [9.05, 4.2])).toBeNull(); // 拖回去
+    expect(s.layout.dragTo('nightstand', [5.5, 7.52])).toBeNull(); // 拖回去
     s.layout.endDrag();
     expect(s.run(60, s.acting('sleep'))).toBe(true);
     expect(s.warnings).toEqual([]);
@@ -159,12 +159,12 @@ describe('拖家具：人物配合', () => {
   it('松手时路确实堵死：记警告、回落站姿，不穿墙', () => {
     const s = stage();
     s.layout.beginDrag('nightstand');
-    expect(s.layout.dragTo('nightstand', [6.3, 3.2])).toBeNull();
+    expect(s.layout.dragTo('nightstand', [2.95, 4.55])).toBeNull();
     s.layout.endDrag();
     s.send('sleep');
     s.run(5);
     expect(s.warnings.some((w) => w.includes('寻路失败'))).toBe(true);
-    expect(s.agent.position[0]).toBeLessThan(6);
+    expect(s.agent.position[1]).toBeLessThan(4.2);
     expect(s.director.snapshot().activity).toBe('idle_stand');
   });
 
@@ -172,7 +172,7 @@ describe('拖家具：人物配合', () => {
     const s = stage();
     // 先把沙发挪到转得开的地方
     s.layout.beginDrag('sofa');
-    expect(s.layout.dragTo('sofa', [1.2, 3.3])).toBeNull();
+    expect(s.layout.dragTo('sofa', [7.0, 1.4])).toBeNull();
     s.layout.endDrag();
     s.send('watch_tv');
     s.run(40, s.acting('watch_tv'));
@@ -190,17 +190,17 @@ describe('拖家具：人物配合', () => {
   it('撤销 / 恢复默认：家具回去，她也跟着回到原位置重新就位', () => {
     const s = stage();
     s.layout.beginDrag('sofa');
-    s.layout.dragTo('sofa', [0.55, 3.3]);
+    s.layout.dragTo('sofa', [6.5, 0.52]);
     s.layout.endDrag();
     s.send('watch_tv');
     s.run(40, s.acting('watch_tv'));
     expect(s.layout.undo()).toEqual(['sofa']);
     const seat = s.anchors().seats.get('sofa:sofa_seat')!;
-    expect(near(seat.plan, [0.89, 2.2])).toBe(true);
+    expect(near(seat.plan, [4.9, 0.86])).toBe(true);
     expect(s.run(40, () => s.agent.state === 'seated' && near(s.agent.position, seat.plan, 0.001))).toBe(true);
     expect(s.layout.undo()).toEqual([]);
     s.layout.beginDrag('coffee_table');
-    s.layout.dragTo('coffee_table', [2.2, 3.4]);
+    s.layout.dragTo('coffee_table', [6.8, 2.2]);
     s.layout.endDrag();
     expect(s.layout.reset()).toEqual(['coffee_table']);
     expect(s.store.isDefault).toBe(true);

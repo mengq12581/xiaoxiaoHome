@@ -22,6 +22,8 @@ export interface WallSpec {
   to?: Vec2;
   height?: number;
   windows?: WindowSpec[];
+  /** true = 这一面不砌墙（两个房间连通成一个开放空间，如玄关与客厅） */
+  open?: boolean;
 }
 
 export interface DoorSpec {
@@ -40,6 +42,8 @@ export interface RoomSpec {
   floor: string;
   walls: WallSpec[];
   doors: DoorSpec[];
+  /** true = 室外区域（如阳台）：只有地面，自己不生成墙，也没有围栏 */
+  outdoor?: boolean;
 }
 
 export interface RoomsConfig {
@@ -153,7 +157,7 @@ export const CONFIG_FILES = {
 
 export type ConfigKey = keyof typeof CONFIG_FILES;
 
-export const FLOOR_KINDS = ['wood_light', 'wood_warm', 'tile', 'carpet'] as const;
+export const FLOOR_KINDS = ['wood_light', 'wood_warm', 'tile', 'carpet', 'stone', 'deck'] as const;
 
 export const FURNITURE_KINDS = [
   'sofa',
@@ -165,5 +169,13 @@ export const FURNITURE_KINDS = [
   'bed',
   'nightstand',
   'wardrobe',
+  'shoe_cabinet',
+  'vanity',
+  'toilet',
+  'shower',
+  'shower_glass',
+  'plants',
+  'round_table',
+  'balcony_chair',
   'window_spot',
 ] as const;

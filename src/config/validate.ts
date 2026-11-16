@@ -88,6 +88,7 @@ function validateRooms(raw: unknown): { issues: ConfigIssue[]; ok: boolean } {
       ids.add(r.id as string);
     } else structural = false;
     need(c, r, p, 'name', isStr, '非空字符串');
+    opt(c, r, p, 'outdoor', (v) => typeof v === 'boolean', 'true / false');
     const okB = need(
       c,
       r,
@@ -115,6 +116,7 @@ function validateRooms(raw: unknown): { issues: ConfigIssue[]; ok: boolean } {
         opt(c, w, wp, 'from', (v) => isVec(v, 2), '[x,y]');
         opt(c, w, wp, 'to', (v) => isVec(v, 2), '[x,y]');
         opt(c, w, wp, 'height', (v) => isNum(v) && v >= 1.8 && v <= 5, '1.8～5 之间的数');
+        opt(c, w, wp, 'open', (v) => typeof v === 'boolean', 'true / false');
         if (opt(c, w, wp, 'windows', Array.isArray, '数组')) {
           ((w.windows as unknown[]) ?? []).forEach((win, k) => {
             const kp = `${wp}.windows[${k}]`;

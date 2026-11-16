@@ -41,14 +41,14 @@ describe('配置合法性', () => {
 
   it('窗超出墙长会被拒绝', () => {
     const raw = readRawConfig();
-    raw.rooms.rooms[0].walls[0].windows[0].span = [4, 7];
-    expect(paths(raw)).toContain('config/rooms.json $.rooms[0].walls[0].windows[0]');
+    raw.rooms.rooms[1].walls[0].windows[0].span = [4, 7];
+    expect(paths(raw)).toContain('config/rooms.json $.rooms[1].walls[0].windows[0]');
   });
 
   it('房间重叠会被拒绝', () => {
     const raw = readRawConfig();
     raw.rooms.rooms.push({ id: 'oops', name: '重叠', bounds: [[5, 1], [8, 3]], floor: 'tile', walls: [], doors: [] });
-    expect(paths(raw)).toContain('config/rooms.json $.rooms[2].bounds');
+    expect(paths(raw)).toContain('config/rooms.json $.rooms[6].bounds');
   });
 
   it('导航边索引越界会被拒绝', () => {
@@ -95,7 +95,7 @@ describe('配置合法性', () => {
 
   it('相机参数：最小距离须小于最大距离', () => {
     const raw = readRawConfig();
-    raw.camera.minDistance = 20;
+    raw.camera.minDistance = 30;
     expect(paths(raw)).toContain('config/camera.json $.minDistance');
   });
 

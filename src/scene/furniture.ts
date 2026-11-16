@@ -51,7 +51,22 @@ const C = {
   pillow: 0xfbf7f0,
   sheet: 0xf5f1ea,
   lampShade: 0xfff1d2,
+  ceramic: 0xf7f5f0,
+  tile: 0xe9e7e1,
+  mirror: 0xd3e4ea,
+  faucet: 0xb9b1a6,
+  terracotta: 0xc98b6b,
+  leaf: 0x7fa878,
+  leafDark: 0x5f8a62,
+  leafLight: 0xa3c48f,
+  flowerPink: 0xe8a3b0,
+  flowerYellow: 0xf0cf7a,
 };
+
+/** 镜面：哑光偏亮，不做真反射 */
+const mirrorMat = soft(C.mirror, { roughness: 0.25 });
+/** 淋浴隔断玻璃 */
+const glassPanelMat = soft(0xcfe6f2, { roughness: 0.15, transparent: true, opacity: 0.3, depthWrite: false });
 
 class Builder {
   constructor(public g: THREE.Group) {}
@@ -67,6 +82,14 @@ class Builder {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     if (name) mesh.name = name;
+    this.g.add(mesh);
+    return mesh;
+  }
+  ball(r: number, color: number, x: number, y: number, z: number, finish: Finish = 'paint') {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), mat(color, finish));
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     this.g.add(mesh);
     return mesh;
   }
@@ -264,6 +287,118 @@ const MODELS: Record<string, ModelFn> = {
       b.box(w / 2 - 0.03, h - 0.16, 0.014, C.cream, s * (w / 4), 0.06 + (h - 0.06) / 2, -d / 2 - 0.007);
       b.box(0.022, 0.28, 0.025, C.woodDark, s * 0.05, h * 0.55, -d / 2 - 0.02, 'wood');
     }
+  },
+
+  shoe_cabinet(b, w, d, h) {
+    b.box(w - 0.04, 0.06, d - 0.04, C.woodDark, 0, 0.03, 0, 'wood');
+    b.box(w, h - 0.1, d, C.warmWhite, 0, 0.06 + (h - 0.1) / 2, 0);
+    b.box(w + 0.03, 0.04, d + 0.02, C.wood, 0, h - 0.02, 0, 'wood');
+    for (const s of [-1, 1]) {
+      b.box(w / 2 - 0.03, h - 0.2, 0.014, C.cream, s * (w / 4), 0.06 + (h - 0.1) / 2, -d / 2 - 0.007);
+      b.box(0.022, 0.16, 0.025, C.woodDark, s * 0.05, h * 0.6, -d / 2 - 0.02, 'wood');
+    }
+    // 柜面上一小盆绿植
+    b.cyl(0.05, 0.04, 0.07, C.terracotta, w * 0.28, h + 0.035, 0);
+    b.ball(0.07, C.leaf, w * 0.28, h + 0.12, 0, 'fabric');
+  },
+
+  vanity(b, w, d, h) {
+    // 洗手台：木柜 + 台面 + 台盆 + 龙头；背后（靠墙）一面镜子
+    b.box(w, h - 0.1, d - 0.03, C.wood, 0, 0.06 + (h - 0.1) / 2, 0.015, 'wood');
+    for (const s of [-1, 1]) b.box(w / 2 - 0.03, h - 0.22, 0.014, C.woodLight, s * (w / 4), 0.06 + (h - 0.1) / 2, -d / 2 + 0.022, 'wood');
+    b.box(w + 0.02, 0.05, d, C.ceramic, 0, h - 0.025, 0);
+    const basin = b.cyl(0.17, 0.15, 0.035, C.tile, 0, h + 0.012, -0.03);
+    basin.scale.z = 0.78;
+    b.cyl(0.14, 0.12, 0.012, C.mirror, 0, h + 0.03, -0.03).scale.z = 0.78;
+    b.cyl(0.014, 0.014, 0.13, C.faucet, 0, h + 0.065, d / 2 - 0.09, 'paint', 12);
+    b.box(0.022, 0.02, 0.1, C.faucet, 0, h + 0.125, d / 2 - 0.13);
+    b.box(w * 0.86, 0.72, 0.03, C.wood, 0, h + 0.62, d / 2 - 0.02, 'wood');
+    b.box(w * 0.86 - 0.07, 0.65, 0.012, C.mirror, 0, h + 0.62, d / 2 - 0.04, 'paint', 'mirror', mirrorMat);
+  },
+
+  toilet(b, w, d, h) {
+    // 水箱靠墙（+z），坐圈朝外
+    b.box(w, h * 0.5, 0.18, C.ceramic, 0, h * 0.7, d / 2 - 0.09);
+    b.box(w * 0.92, 0.03, 0.2, C.tile, 0, h * 0.96, d / 2 - 0.09);
+    b.box(w * 0.7, h * 0.42, d * 0.5, C.ceramic, 0, h * 0.21, -0.02);
+    const bowl = b.cyl(w * 0.48, w * 0.36, 0.1, C.ceramic, 0, h * 0.47, -d * 0.12, 'paint', 28);
+    bowl.scale.z = 1.25;
+    const lid = b.cyl(w * 0.46, w * 0.46, 0.025, C.tile, 0, h * 0.55, -d * 0.12, 'paint', 28);
+    lid.scale.z = 1.25;
+  },
+
+  shower(b, w, d, h) {
+    // 淋浴区：浅色防滑地台 + 地漏 + 靠左墙的花洒立杆
+    b.box(w, h, d, C.tile, 0, h / 2, 0);
+    b.cyl(0.05, 0.05, 0.01, C.faucet, w * 0.15, h + 0.005, 0, 'paint', 16);
+    const x = -w / 2 + 0.07;
+    b.cyl(0.014, 0.014, 1.95, C.faucet, x, h + 0.975, 0, 'paint', 12);
+    b.box(0.26, 0.022, 0.022, C.faucet, x + 0.13, h + 1.95, 0);
+    b.cyl(0.1, 0.1, 0.025, C.faucet, x + 0.27, h + 1.93, 0, 'paint', 24);
+    b.box(0.05, 0.12, 0.08, C.faucet, x + 0.01, h + 1.05, 0);
+  },
+
+  shower_glass(b, w, d, h) {
+    // 淋浴与马桶之间的玻璃隔断（只隔左半，右侧留通道）
+    const panel = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.012, 2, 0.005), glassPanelMat);
+    panel.position.set(0, h / 2 + 0.03, 0);
+    panel.renderOrder = 1;
+    b.g.add(panel);
+    b.box(w, 0.03, d, C.faucet, 0, 0.015, 0);
+    b.box(w, 0.025, d * 0.8, C.faucet, 0, h + 0.04, 0);
+    b.box(0.03, h + 0.05, d * 0.8, C.faucet, w / 2 - 0.015, (h + 0.05) / 2, 0);
+  },
+
+  plants(b, w, d, h, item) {
+    // 一丛花草：高矮不一的陶盆，叶团 + 零星小花；位置由 id 决定，每次一样
+    const rnd = seeded(hashString(item.id));
+    const pots: [number, number, number, number][] = [
+      [0.2, -0.3, 0.17, 1.0],
+      [-0.22, -0.34, 0.12, 0.62],
+      [0.24, 0.12, 0.13, 0.72],
+      [-0.18, 0.02, 0.15, 0.5],
+      [0.0, 0.38, 0.1, 0.42],
+      [-0.3, 0.36, 0.09, 0.34],
+    ];
+    const leaves = [C.leaf, C.leafDark, C.leafLight];
+    const blooms = [C.flowerPink, C.flowerYellow, C.pillow];
+    pots.forEach(([fx, fz, r, tall], i) => {
+      const x = fx * w;
+      const z = -fz * d;
+      const potH = 0.12 + r * 0.7;
+      b.cyl(r, r * 0.78, potH, i % 2 ? C.terracotta : C.cream, x, potH / 2, z, 'paint', 20);
+      const top = potH + tall * h * 0.55;
+      const n = 3 + Math.floor(rnd() * 3);
+      for (let k = 0; k < n; k++) {
+        const a = rnd() * Math.PI * 2;
+        const rr = r * (0.3 + rnd() * 0.7);
+        const yy = potH + (top - potH) * (0.35 + rnd() * 0.65);
+        b.ball(r * (0.75 + rnd() * 0.5), leaves[(i + k) % 3], x + Math.cos(a) * rr, yy, z + Math.sin(a) * rr, 'fabric');
+      }
+      if (i % 2 === 0) {
+        for (let k = 0; k < 4; k++) {
+          const a = rnd() * Math.PI * 2;
+          b.ball(0.03, blooms[(i + k) % 3], x + Math.cos(a) * r * 0.9, top + 0.02 + rnd() * 0.06, z + Math.sin(a) * r * 0.9, 'fabric');
+        }
+      }
+    });
+  },
+
+  round_table(b, w, _d, h) {
+    b.cyl(w / 2, w / 2, 0.04, C.wood, 0, h - 0.02, 0, 'wood', 40);
+    b.cyl(0.035, 0.045, h - 0.07, C.woodDark, 0, (h - 0.07) / 2 + 0.03, 0, 'wood', 16);
+    b.cyl(w * 0.3, w * 0.33, 0.03, C.woodDark, 0, 0.015, 0, 'wood', 28);
+    // 桌上一只杯子
+    b.cyl(0.03, 0.026, 0.07, C.ceramic, w * 0.16, h + 0.035, w * 0.08, 'paint', 16);
+  },
+
+  balcony_chair(b, w, d, h) {
+    const seatY = 0.42;
+    legs(b, w, d, seatY - 0.02, 0.05, 0.04, C.woodDark);
+    b.box(w, 0.05, d, C.wood, 0, seatY, 0, 'wood');
+    b.box(w - 0.06, 0.04, d - 0.06, C.blanketFold, 0, seatY + 0.04, 0, 'fabric');
+    const back = b.box(w, h - seatY - 0.02, 0.04, C.wood, 0, seatY + (h - seatY) / 2, d / 2 - 0.02, 'wood');
+    back.rotation.x = 0.1;
   },
 
   window_spot() {
