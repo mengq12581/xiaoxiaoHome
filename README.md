@@ -99,6 +99,12 @@ npm run dev
 | M5 拖家具 | 完成，待客户验收 | `m5-*.png` |
 | M6 模拟器与联调 | 桌面模拟器已取消（客户决定，C10），用网页右上角的面板代替；演示脚本 `npm run demo` 未做 | — |
 
+## 美术方向（进行中）
+
+- 草案：[docs/art/美术方向.md](docs/art/美术方向.md)，样张在 `docs/art/concept/`（总览 `overview.jpg`）。
+- 样张页面：`npm run dev` 后打开 <http://127.0.0.1:5173/concept.html>（开发用，不进打包产物）。小岛、湖面、天空、外观、室内软装的模块在 `src/world/`，**还没有接进主场景**。
+- 美术与 three.js 相关的开源 skill 放在 `.claude/skills/`（来源与许可见其中的 README），在本仓库打开的 Claude Code 会话会自动加载。
+
 ## 技术方案及理由
 
 | 关注点 | 选择 | 理由 |
@@ -136,6 +142,8 @@ src/config/    配置类型、加载与校验
 src/scene/     户型几何（layout.ts，纯函数）、墙体与门窗、家具模型、交互点、相机、墙体遮挡
 src/nav/       寻路（纯函数）
 src/character/ 角色骨架、模型与贴图、走位与基础动作、活动动作层
+src/world/     湖心岛场景：小岛、湖面、天空、植被、房子外观、室内软装、色板与光照预设（美术方向样张用，尚未接进主场景）
+src/concept/   美术方向样张页面（concept.html）
 src/director/  行为导演（状态机）、空闲池、演员（把演出落到角色身上）
 src/layout/    家具布局：放置规则、撤销、保存，以及家具动了之后人物怎么配合
 src/state/     状态对象类型、前端状态客户端与日志
