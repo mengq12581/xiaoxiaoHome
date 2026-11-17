@@ -1,0 +1,6 @@
+interface:
+  display_name: "Game Art Production"
+  short_description: "Create and compose game assets from shared art direction"
+  default_prompt: "Use $game-art-production to read this project pack, assign and create the needed assets, and review their style, animation and composition together."
+policy:
+  allow_implicit_invocation: true

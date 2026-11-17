@@ -7,7 +7,9 @@ dist/
 .env.*
 .DS_Store
 Thumbs.db
-.claude/
+.claude/*
+# 项目 skill 要随仓库走（来源与许可见 .claude/skills/README.md）
+!.claude/skills/
 __pycache__/
 *.pyc
 venv/

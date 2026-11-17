@@ -1,0 +1,80 @@
+# 游戏美术：先成立，再成套
+
+用于建立游戏美术方向、制作代表样板，以及处理“很统一但不好看”“像 AI 素材、不像这个游戏”的反馈。接上已有项目，不另造审批流程。明确的日常制作授权继续有效；候选判断不冒充主美已批准的标准。
+
+## 1. 用途先于画风词
+
+先从现有资料确定：玩家此刻在做什么，画面需要让玩家先看见什么，资产最终出现在哪里，本次处于概念、单件、组合还是引擎交付阶段。资料不足时提出有理由的候选假设，最多补问影响下一步的关键问题。不能仅凭“游戏美术”选定 2D、等距、欧美卡通或目标规格。
+
+将“高级、精致、有游戏感”译成当前任务可观察的判断。例如：合成物品的相邻等级靠轮廓与结构区分；场景中行动路线与角色从背景分离；建筑升级保留入口、镜头和核心结构。美感、项目一致性与功能可读性都要看，不能互相替代。
+
+## 2. 从参考提炼视觉语法
+
+实际看图后，按用途记录少量真正影响结果的观察；不逐项填空。参考各自注明 style / identity / composition / context；不把别人的人物、标志和故事一起继承。
+
+| 维度 | 写成可执行的判断 | 避免的空话 |
+|---|---|---|
+| 形状、比例 | 大形体关系、轮廓节奏、夸张发生在哪里 | Q 版、很可爱 |
+| 边缘、笔触 | 哪些边缘硬、哪些柔；纹理集中在哪里 | 手绘质感、超精细 |
+| 明暗、色域 | 焦点靠什么分离；主辅色承担什么作用 | 高级配色、电影感 |
+| 材质、光照 | 布、皮肤、金属如何分别响应同一光源 | 所有东西都高光发亮 |
+| 镜头、空间 | 视角、接地、尺度、前中后景与路径 | 有空间感 |
+| 密度、叙事 | 主体在做什么；哪些区域需要留白 | 加更多细节、增加氛围 |
+| 简化程度 | 结构分几层、转折多复杂、材料靠色面还是纹理、高光是否宽而克制 | 高清就要增加毛孔、褶皱、反光和立体厚度 |
+
+分清观察、推断配方和已确认规则。不要凭肉眼编造精确色值、角度、像素占比或几何尺寸。可提出供本次测试的尺度，明确它是案例假设，不变成全项目或所有游戏的标准。
+
+**按参考续作时，简化程度也是约束。** 依据[参考驱动制作协议](asset-production-protocol.md)记录结构、厚度、纹理和光照的边界，并写回项目包。将判断落实到当前对象，例如“夹馅保持薄色带”；这是当前参考的要求，不是所有食品或游戏图标的通用规则。
+
+## 3. 用代表样板建立方向
+
+优先复用已有认可样板；没有时先做最能暴露风险的一件。样板要能解释这个游戏的玩法、气质或关键资产用途，不只是通用壁纸。根据实际工具附入参考图，并记录输入、提示、输出与未提供的参数；文字路径不等于图像已传入。
+
+需要比较方向时，尽量固定题材、用途和构图，只改变指定的比例、边缘或渲染方式。完整换题材不能证明是哪条规则有效。不要默认跑风格竞赛；没有约定预算时，先做一个有理由的方向并按已有工作流设置修正检查点。
+
+制作前用 [首件与家族检查记录](../templates/game-art-first-article.template.md) 明确本轮要证明什么。看完实际图后再填结论。禁止先写“通过”或承诺零漂移。
+
+扩量前按[制作协议](asset-production-protocol.md)完成同尺度参考比较与实际用途检查；棋子还须在格内重复相邻排列和混排。首件关键问题未解决时先修正，沿用已有日常制作授权。连续失败时重新选择参考或方法，并记录实际改善的层面，避免把失败稿变成下一轮的正向风格锚点。
+
+## 4. 从一件扩到一组，保留差异
+
+把共同不变量与有意变化分别写入对应规则、类别、家族和实体。沿用 style-pack.json 的既有契约，不另建第二套事实源。
+
+| 家族 | 共同依据 | 应有的差异 | 最有价值的组合检查 |
+|---|---|---|---|
+| 角色与动作 | 身份、比例、结构与材料 | 性格、表情、动作；服装按授权变化 | 面部与全身、手持物接触、实际角色尺度 |
+| 合成链 / 棋子 | 视角、光源、边缘和材质 | 等级改变轮廓、结构或功能，不只换色 | 相邻等级并排；目标尺寸；真实或明确标注的棋盘合成 |
+| 等距建筑 | 相机、入口、地基、建造语汇 | 功能扩建、体量、阶段 | 同镜头排列；占地与锚点需实际测量/引擎确认 |
+| 场景 | 世界、形状、材料、尺度 | 地域、叙事、天气与时间 | 角色与路径、交互物、UI 安全区；移动时另做验证 |
+| UI 组件 | 状态语义、字体、轮廓与图标体系 | 重要性、尺寸与状态反馈 | 真实文案、可用/不可用、相邻元素与最终界面 |
+| KV / Loading | 人物身份、世界与游戏内材料 | 动作、镜头和构图 | 主体事件、标题安全区与不同渠道；准确文本独立排版 |
+
+整板只能证明整板。需要独立资产时分别生成/编辑和导出，实际测 alpha、边距和尺寸；不得把一张整板说成已经拆件、分层、绑定或可以进引擎。风格多样化要改变视觉语法，而不是给同一张素材换配色。
+
+## 5. 按真实观看方式检查
+
+制作商店图、README 动画和游戏宣传页时，同时读 [游戏宣传画面](game-presentation.md)：将文字、角色、道具、UI 和事件一起设计，避免用汇报版式包装单张图片。
+
+先快速看缩略图：能否辨认游戏类型、主体和发生的事；再看目标尺寸：轮廓、等级、状态是否读得清；最后放回上下文：角色、场景、物品与 UI 是否协调，操作或路线是否被遮挡。需要时对比浅深背景或灰度，但不能把自动相似度当作美术结论。
+
+目标尺寸未知时，以明确标注的试验尺度做探索，并保留真实设备检查为待办。合成界面可以帮助检查，但必须标为合成示意；只有实际运行过才能称为游戏运行截图。AI 生成的 UI 文字、进度条、数值或按钮不得冒充真实功能。
+
+判定分四层记录：技术实测、视觉观察、任务是否达成、主美批准。结构检查通过不等于任何后三项；自己的看图判断不能冒充独立评审或客户认可。
+
+## 6. 有证据地修正，再交接
+
+找到具体位置和成因：主体弱、轮廓近似、角度漂移、材质错、身份变、结构缺失或上下文失读。优先修阻碍用途和违反实际规则的问题。下一轮写清只改什么、保持什么，并检查模型是否连带改变其他区域。
+
+保留失败稿与修正版，记录实际差异。没有改善时定位参考、规则或工具限制；不无止境重抽，也不把目标偷偷改成现有结果。成套交接包含实际文件、适用规则与版本、参考用途、技术检查、视觉观察、未定项及下一步动作。只有需要改变共享基线时回到既有变更流程。
+
+公开仓库的 [原创案例与检查记录](https://github.com/NewenergyEric/art-director-skill/blob/main/docs/CASE-STUDIES.md) 是一次具体试用，三个方向都不是默认画风。它们证明本次生成和检查发生过，不证明所有游戏都能一次生成或自动达到生产标准；使用本流程不依赖下载这些示例。
+
+## 7. Plan asset richness together with sustained play
+
+When a set feels sparse, repetitive or like a presentation, map the playable loop to asset families, uses, states, viewing directions and action phases before adding images. Distinguish functional coverage, delivered resources and uses actually integrated into play. Decoration and catalogue samples can have valid purposes; label them accordingly. Recolours, repeated playback steps and multiple crops do not create new gameplay functions. Report independent generated sources, reusable parts and baked animation frames separately; no case's family or item count is a universal minimum.
+
+Compare the existing first article, adjacent levels and new families together at the same intended display scale, then in their actual cells, order slots or world positions. Shared lighting and materials should preserve the project while silhouettes, structures and material responses distinguish roles and levels. A large contact sheet or palette match does not prove small-size readability. Test the actual interactions that give the assets meaning, including their resource costs and visible results; an inventory entry alone does not establish use.
+
+Before expanding related tasks, agree on the shared pack, camera, scale, contact anchors, attachments and event interfaces. Choose production methods around the missing behavior: separating a fixed base from moving machinery or using drawn parts with editable joints may be appropriate. Neither is a default aesthetic. At a revision checkpoint, preserve unsuccessful frames and reconsider the method instead of repeatedly generating the same defect. A mirrored profile is not a complete turnaround, and aim/release states do not establish a reload sequence.
+
+Judge richness during sustained normal-speed play, including relevant movement, direction changes, action transitions and repeated interactions. UI placement, skins and real typography belong in that review. Keep incomplete directions, contact drift, subtle or unreadable motion and untested devices visible. A short performance sample, a completed gameplay test and a director's decision establish different things. The optional `game-art-production` companion's asset-richness-and-playback guide connects this review to the existing task records; `style-pack.json` remains the shared source of truth.
