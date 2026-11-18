@@ -95,7 +95,7 @@ describe('配置合法性', () => {
 
   it('相机参数：最小距离须小于最大距离', () => {
     const raw = readRawConfig();
-    raw.camera.minDistance = 30;
+    raw.camera.minDistance = 60;
     expect(paths(raw)).toContain('config/camera.json $.minDistance');
   });
 

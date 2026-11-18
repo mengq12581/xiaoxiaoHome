@@ -5,10 +5,10 @@ export type TimeOfDay = 'day' | 'golden' | 'night';
 
 export const PALETTE = {
   // 湖水：由浅到深，近岸偏青绿，远处偏蓝
-  water: { shallow: '#a7dfd2', mid: '#6cb8bd', deep: '#3f86a0', foam: '#f6faf3' },
-  // 地面：草地按「受光 / 中间 / 背光」三块大色面组织，不做逐根草的细节
-  grass: { lit: '#bad785', mid: '#98c172', shade: '#77a565' },
-  ground: { path: '#dcc39a', sand: '#efdfba', earth: '#b8916a', rock: '#b1aaa0', rockDark: '#8a847c' },
+  water: { shallow: '#7fae9c', mid: '#457f86', deep: '#24566a', foam: '#e6ece6' },
+  // 地面：草地三种深浅自然过渡（写实：饱和度比卡通版低，偏黄绿）；细碎明暗来自细节贴图
+  grass: { lit: '#a7bd6e', mid: '#87a35a', shade: '#6a8a4c' },
+  ground: { path: '#c9b08a', sand: '#dccaa4', earth: '#a3825f', rock: '#a8a198', rockDark: '#857e76' },
   // 植被：树冠同样是 3～4 个明度带；粉色花树是唯一的次要点缀，呼应笑笑的腮红
   foliage: { lit: '#b2cf7a', mid: '#86b067', shade: '#5f8b58', trunk: '#8b6a50', blossom: '#f6cdd2', blossomShade: '#e8b3bb', reed: '#a5b673' },
   flowers: ['#fbf6ec', '#f6dd8c', '#f3c3cb', '#cfe0f2'],
@@ -42,6 +42,9 @@ export interface LightingPreset {
   hemiIntensity: number;
   envIntensity: number;
   exposure: number;
+  /** 物理天空（Preetham）参数；null = 用渐变夜空 */
+  physicalSky: { turbidity: number; rayleigh: number; mieCoefficient: number; mieDirectionalG: number } | null;
+  /** 渐变夜空 / 水面反射兜底用的天色 */
   sky: { zenith: string; horizon: string; below: string; glow: string };
   cloud: { lit: string; shade: string; opacity: number };
   /** 远山两层的颜色（近的深一些） */
@@ -65,13 +68,14 @@ export const LIGHTING: Record<TimeOfDay, LightingPreset> = {
     sunShadow: true,
     hemiSky: '#a9cdee',
     hemiGround: '#8c9a62',
-    hemiIntensity: 0.85,
-    envIntensity: 0.32,
-    exposure: 1.0,
-    sky: { zenith: '#6ea9dd', horizon: '#e6f1f2', below: '#d3e6ea', glow: '#fff6dc' },
-    cloud: { lit: '#fefcf6', shade: '#d6e3ec', opacity: 0.95 },
-    hills: ['#c3d6d3', '#a9c6b4'],
-    fog: { color: '#dcebef', near: 70, far: 420 },
+    hemiIntensity: 0.22,
+    envIntensity: 0.5,
+    exposure: 0.84,
+    physicalSky: { turbidity: 2.6, rayleigh: 1.1, mieCoefficient: 0.004, mieDirectionalG: 0.8 },
+    sky: { zenith: '#5f93c8', horizon: '#cfe0e8', below: '#b8ccd4', glow: '#fff6dc' },
+    cloud: { lit: '#ffffff', shade: '#cdd5de', opacity: 0.9 },
+    hills: ['#8fa6a2', '#738f80'],
+    fog: { color: '#c6d6de', near: 70, far: 420 },
     practicals: false,
     glint: 1.0,
     waterTint: '#ffffff',
@@ -85,12 +89,13 @@ export const LIGHTING: Record<TimeOfDay, LightingPreset> = {
     sunShadow: true,
     hemiSky: '#8fa3d8',
     hemiGround: '#6e5a48',
-    hemiIntensity: 0.7,
-    envIntensity: 0.22,
-    exposure: 0.98,
-    sky: { zenith: '#6077b5', horizon: '#f7c591', below: '#e9b88f', glow: '#ffd29a' },
-    cloud: { lit: '#ffd9b0', shade: '#a58fb7', opacity: 0.95 },
-    hills: ['#b8a2b4', '#9b8ea6'],
+    hemiIntensity: 0.25,
+    envIntensity: 0.6,
+    exposure: 0.9,
+    physicalSky: { turbidity: 5, rayleigh: 2.2, mieCoefficient: 0.005, mieDirectionalG: 0.86 },
+    sky: { zenith: '#6077b5', horizon: '#f2b989', below: '#c99a7c', glow: '#ffd29a' },
+    cloud: { lit: '#ffcf9e', shade: '#8f7f9c', opacity: 0.9 },
+    hills: ['#8f7f8c', '#75697a'],
     fog: { color: '#f1c49c', near: 60, far: 380 },
     practicals: true,
     glint: 1.4,
@@ -106,10 +111,11 @@ export const LIGHTING: Record<TimeOfDay, LightingPreset> = {
     hemiSky: '#2c3d6e',
     hemiGround: '#141a26',
     hemiIntensity: 0.55,
-    envIntensity: 0.06,
+    envIntensity: 0.5,
     exposure: 1.18,
+    physicalSky: null,
     sky: { zenith: '#0d1630', horizon: '#33476f', below: '#1f2b47', glow: '#c9d6f2' },
-    cloud: { lit: '#5d6b8e', shade: '#2a3452', opacity: 0.7 },
+    cloud: { lit: '#3c4866', shade: '#1e263d', opacity: 0.55 },
     hills: ['#2b3754', '#222c45'],
     fog: { color: '#2a3a5e', near: 50, far: 340 },
     practicals: true,

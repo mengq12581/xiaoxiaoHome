@@ -1,6 +1,7 @@
 // 轨道相机：左键自由环绕（水平 360°，极角受限），滚轮连续缩放，相机始终在屋外。
 // 目标点平时固定在 config/camera.json 的 target（户型中心附近）；
-// 拉近到最近的 45% 行程内时，目标点平滑移向角色，保证「近到能看清笑笑的脸」（docs/验收问题.md B8）。
+// 拉近到 15 米以内时，目标点平滑移向角色，保证「近到能看清笑笑的脸」（docs/验收问题.md B8）。
+// 拉远（最远约 45 米）能看到整个小岛；屋顶随距离开合在 world/world.ts。
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -10,8 +11,8 @@ import { P } from './house';
 const DEG = Math.PI / 180;
 /** 屋体包围盒外再留的余量（米） */
 const OUTSIDE_MARGIN = 0.35;
-/** 缩放行程（0 = 最远，1 = 最近）超过这个值开始把目标点移向角色 */
-const FOCUS_START = 0.55;
+/** 相机距离小于这个值（米）开始把目标点移向角色 */
+const FOCUS_START_DISTANCE = 15;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -30,7 +31,8 @@ export class CameraRig {
     private cfg: CameraConfig,
     houseBox: THREE.Box3,
   ) {
-    this.camera = new THREE.PerspectiveCamera(45, dom.clientWidth / Math.max(1, dom.clientHeight), 0.1, 200);
+    // 远处要看到湖对岸的山和天空（约 500 米）
+    this.camera = new THREE.PerspectiveCamera(45, dom.clientWidth / Math.max(1, dom.clientHeight), 0.1, 1200);
     this.home = P(cfg.target[0], cfg.target[1], cfg.target[2]);
     this.keepOut = houseBox.clone().expandByScalar(OUTSIDE_MARGIN);
     this.keepOut.min.y = -Infinity;
@@ -60,8 +62,8 @@ export class CameraRig {
   /** 按当前距离算目标点：远时在户型中心，近时移向角色 */
   private targetFor(distance: number): THREE.Vector3 {
     if (!this.focus) return this.home.clone();
-    const zoom = (this.cfg.maxDistance - distance) / (this.cfg.maxDistance - this.cfg.minDistance);
-    const w = smoothstep(FOCUS_START, 1, zoom);
+    const far = Math.min(FOCUS_START_DISTANCE, this.cfg.maxDistance);
+    const w = smoothstep(far, this.cfg.minDistance, distance);
     return this.home.clone().lerp(this.focus(), w);
   }
 

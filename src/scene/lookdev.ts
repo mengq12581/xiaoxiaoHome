@@ -1,34 +1,22 @@
-// 画面风格基线（柔和 3D 游戏观感）。所有「看起来怎么样」的全局设置集中在这里：
-// - 色调映射：Neutral（保住暖色与粉彩，不发灰）；
-// - 环境光照：程序生成的柔光棚（RoomEnvironment → PMREM），断网可用，给每个曲面连续的明暗过渡；
-// - 主光：暖色方向光 + 柔边阴影（PCF 加大采样半径）；
+// 画面风格基线（写实方向，docs/art/美术方向.md）。渲染器与后期集中在这里；天空、太阳、环境光照在 src/world/world.ts：
+// - 色调映射：Neutral（保住暖色与墙色，不发灰；AgX 对比过，整体发白）；
+// - 阴影：PCF 柔边；
 // - 环境光遮蔽（GTAO）：墙角、家具底部、靠垫缝隙自然变暗，物体「落在」空间里；
-// - 背景：竖向渐变天色 + 边缘羽化的地台，不留硬边圆盘；
+// - 泛光（Bloom）：只在黄昏 / 夜里开，灯罩、窗户有一圈柔光；
 // - 抗锯齿：4× MSAA。
-// 性能兜底：连续低帧率时自动关掉环境光遮蔽；地址栏加 ?fx=off 可手动关闭后期，?fx=on 强制保持开启（不自动降级）。
+// 性能兜底：约 3 秒平均帧率低于 24 时按顺序降级（先关湖面倒影，再关环境光遮蔽，再关泛光）；
+// 地址栏加 ?fx=off 可手动关闭后期，?fx=on 强制保持开启（不自动降级）。
 
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 export const LOOK = {
-  exposure: 1.02,
-  skyTop: '#e3ecef',
-  skyHorizon: '#eee6da',
-  skyBottom: '#e9decf',
-  ground: '#e9decf',
-  envIntensity: 0.4,
-  hemiSky: 0xfff4e6,
-  hemiGround: 0xcdb9a2,
-  hemiIntensity: 0.45,
-  sunColor: 0xffe9cf,
-  sunIntensity: 1.7,
-  /** 阴影半影（PCF 采样半径，贴图像素） */
-  shadowRadius: 4,
-  shadowMapSize: 2048,
+  exposure: 1.0,
+  bloom: { strength: 0.35, radius: 0.5, threshold: 1.1 },
   ao: { radius: 0.5, distanceExponent: 1.2, thickness: 1, scale: 1.3, samples: 16, intensity: 1 },
   maxPixelRatio: 2,
 };
@@ -51,88 +39,20 @@ export function fxEnabled(): boolean {
   return new URLSearchParams(location.search).get('fx') !== 'off';
 }
 
-function skyTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 512;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, LOOK.skyTop);
-  grad.addColorStop(0.4, LOOK.skyHorizon);
-  grad.addColorStop(1, LOOK.skyBottom);
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 4, 512);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-/** 地台：中间实、边缘羽化到透明，融进背景 */
-function buildGround(center: THREE.Vector3, radius: number): THREE.Mesh {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.3, 'rgba(255,255,255,0.85)');
-  grad.addColorStop(0.65, 'rgba(255,255,255,0.25)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 256, 256);
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * 2.4, 64),
-    new THREE.MeshBasicMaterial({ color: LOOK.ground, alphaMap: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(center.x, -0.065, center.z);
-  ground.renderOrder = -1;
-  ground.name = 'ground';
-  return ground;
-}
-
-export interface Lighting {
-  sun: THREE.DirectionalLight;
-  ground: THREE.Mesh;
-}
-
-/** 背景、环境光照、主光、地台 */
-export function setupLighting(renderer: THREE.WebGLRenderer, scene: THREE.Scene, center: THREE.Vector3, radius: number): Lighting {
-  scene.background = skyTexture();
-
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = LOOK.envIntensity;
-  pmrem.dispose();
-
-  scene.add(new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, LOOK.hemiIntensity));
-
-  // 主光从左前上方来：远处墙面背光略暗，空间层次清楚（墙体与门窗框不投影，见 house.ts）
-  const sun = new THREE.DirectionalLight(LOOK.sunColor, LOOK.sunIntensity);
-  sun.position.set(center.x - 4, 10, center.z + 6);
-  sun.target.position.copy(center);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(LOOK.shadowMapSize, LOOK.shadowMapSize);
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -radius - 1;
-  sc.right = sc.top = radius + 1;
-  sc.near = 1;
-  sc.far = 30;
-  sun.shadow.radius = LOOK.shadowRadius;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.03;
-  scene.add(sun, sun.target);
-
-  const ground = buildGround(center, radius);
-  scene.add(ground);
-  return { sun, ground };
-}
-
 export interface Pipeline {
   render(): void;
   setSize(w: number, h: number): void;
   /** 每帧报告耗时（秒），用于低帧率时自动降级 */
   reportFrame(dt: number): void;
+  /** 泛光开关（黄昏 / 夜里开） */
+  setBloom(on: boolean): void;
   readonly aoActive: boolean;
+}
+
+/** 低帧率时依次执行的降级步骤（在环境光遮蔽之前） */
+export interface DegradeStep {
+  name: string;
+  run(): void;
 }
 
 /**
@@ -144,9 +64,10 @@ export function createPipeline(
   scene: THREE.Scene,
   camera: THREE.Camera,
   aoExclude: () => THREE.Object3D[],
+  degradeFirst: DegradeStep[] = [],
 ): Pipeline {
   if (!fxEnabled()) {
-    return { render: () => renderer.render(scene, camera), setSize() {}, reportFrame() {}, aoActive: false };
+    return { render: () => renderer.render(scene, camera), setSize() {}, reportFrame() {}, setBloom() {}, aoActive: false };
   }
   const size = renderer.getSize(new THREE.Vector2());
   const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
@@ -178,10 +99,25 @@ export function createPipeline(
     for (const o of hidden) o.visible = true;
   };
   composer.addPass(gtao);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), LOOK.bloom.strength, LOOK.bloom.radius, LOOK.bloom.threshold);
+  bloom.enabled = false;
+  composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
-  // 自动降级：约 3 秒平均帧率低于 24 就关掉遮蔽（集显兜底），不再自动打开
+  // 自动降级：约 3 秒平均帧率低于 24 就执行下一步（不再自动恢复）
   const forced = new URLSearchParams(location.search).get('fx') === 'on';
+  let bloomAllowed = true;
+  const steps: DegradeStep[] = [
+    ...degradeFirst,
+    { name: '关闭环境光遮蔽', run: () => (gtao.enabled = false) },
+    {
+      name: '关闭泛光',
+      run: () => {
+        bloomAllowed = false;
+        bloom.enabled = false;
+      },
+    },
+  ];
   let acc = 0;
   let n = 0;
   return {
@@ -190,14 +126,18 @@ export function createPipeline(
       composer.setPixelRatio(renderer.getPixelRatio());
       composer.setSize(w, h);
     },
+    setBloom(on) {
+      bloom.enabled = on && bloomAllowed;
+    },
     reportFrame(dt) {
-      if (!gtao.enabled || document.hidden || forced) return;
+      if (!steps.length || document.hidden || forced) return;
       acc += dt;
       n++;
       if (acc < 3) return;
       if (n / acc < 24) {
-        gtao.enabled = false;
-        console.info('[look] 帧率偏低，已关闭环境光遮蔽');
+        const step = steps.shift()!;
+        step.run();
+        console.info(`[look] 帧率偏低，已${step.name}`);
       }
       acc = 0;
       n = 0;

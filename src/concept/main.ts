@@ -12,22 +12,16 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { HorizontalTiltShiftShader } from 'three/examples/jsm/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTiltShiftShader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadConfig } from '../config/load';
 import { buildHouse, P } from '../scene/house';
 import { buildFurniture } from '../scene/furniture';
-import { houseBounds } from '../scene/layout';
 import { buildCharacter } from '../character/model';
 import { preloadGltfCharacter } from '../character/gltfModel';
 import { CharacterAgent } from '../character/agent';
 import { Pathfinder, furnitureObstacles, wallObstacles } from '../nav/pathfinder';
 import { indexAnchors } from '../scene/anchors';
-import { buildIsland } from '../world/island';
-import { buildWater } from '../world/water';
-import { buildSky } from '../world/sky';
-import { buildVegetation } from '../world/vegetation';
-import { buildExterior } from '../world/exterior';
-import { buildInteriorDecor } from '../world/interiorDecor';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { buildWorld } from '../world/world';
 import { LIGHTING, type TimeOfDay } from '../world/palette';
 import type { Vec2 } from '../config/types';
 
@@ -42,37 +36,21 @@ async function boot() {
   renderer.setPixelRatio(1);
   renderer.setSize(app.clientWidth, app.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.NeutralToneMapping;
+  const tm = new URLSearchParams(location.search).get('tm');
+  renderer.toneMapping = tm === 'agx' ? THREE.AgXToneMapping : tm === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   app.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
   // ───────── 房子、家具、人物 ─────────
   const house = buildHouse(cfg.rooms);
   scene.add(house.root);
   const furniture = cfg.furniture.items.map(buildFurniture);
   for (const f of furniture) scene.add(f.group);
-  const hb = houseBounds(cfg.rooms);
-  const entry = cfg.rooms.rooms.flatMap((r) => r.doors).find((d) => d.id === 'entry_door');
-  const door: Vec2 = entry ? [entry.at[0] - 0.6, entry.at[1]] : [hb.x0 - 0.6, (hb.y0 + hb.y1) / 2];
-
-  const island = buildIsland({ house: hb, door, pierHeading: 200 });
-  scene.add(island.mesh);
-  const water = buildWater(island);
-  scene.add(water.mesh);
-  const center = P(island.center[0], 0, island.center[1]);
-  const sky = buildSky(center);
-  scene.add(sky.group);
-  const veg = buildVegetation(island, hb);
-  scene.add(veg.group);
-  const exterior = buildExterior(cfg.rooms);
-  scene.add(exterior.group);
-  const decor = buildInteriorDecor(cfg.rooms, cfg.furniture.items);
-  scene.add(decor.group);
+  const world = buildWorld(renderer, scene, cfg.rooms, cfg.furniture.items, house);
+  const { island, water, exterior, decor, center } = world;
 
   const character = buildCharacter(spec);
   scene.add(character.root);
@@ -81,70 +59,9 @@ async function boot() {
   const anchors = indexAnchors(cfg.furniture.items);
   for (let i = 0; i < 30; i++) agent.update(1 / 30);
 
-  // ───────── 光 ─────────
-  const hemi = new THREE.HemisphereLight();
-  const sun = new THREE.DirectionalLight();
-  sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -17;
-  sc.right = sc.top = 17;
-  sc.near = 1;
-  sc.far = 80;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.03;
-  sun.shadow.radius = 3;
-  sun.target.position.copy(center);
-  scene.add(hemi, sun, sun.target);
-  const lamps = [...veg.practicals, ...decor.practicals, ...exterior.practicals].map((pr) => {
-    const l = new THREE.PointLight(pr.color, pr.intensity, pr.distance, 2);
-    l.position.copy(pr.position);
-    scene.add(l);
-    return { l, base: pr.intensity };
-  });
-  const glows = [...veg.emissive, ...decor.emissive, ...exterior.emissive];
-  const glass: THREE.MeshStandardMaterial[] = [];
-  house.root.traverse((o) => {
-    if (o.name === 'glass') glass.push((o as THREE.Mesh).material as THREE.MeshStandardMaterial);
-  });
-  const glassBase = glass.map((m) => ({ color: m.color.clone(), opacity: m.opacity }));
-
-  let time: TimeOfDay = 'day';
   const setTime = (t: TimeOfDay) => {
-    time = t;
-    const p = LIGHTING[t];
-    renderer.toneMappingExposure = p.exposure;
-    hemi.color.set(p.hemiSky);
-    hemi.groundColor.set(p.hemiGround);
-    hemi.intensity = p.hemiIntensity;
-    scene.environmentIntensity = p.envIntensity;
-    const az = (p.sunAzimuth * Math.PI) / 180;
-    const el = (p.sunElevation * Math.PI) / 180;
-    const dir = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), -Math.sin(az) * Math.cos(el));
-    sun.position.copy(center).addScaledVector(dir, 40);
-    sun.color.set(p.sunColor);
-    sun.intensity = p.sunIntensity;
-    sun.castShadow = p.sunShadow;
-    scene.fog = new THREE.Fog(p.fog.color, p.fog.near, p.fog.far);
-    sky.setLighting(p, dir);
-    water.setLighting(p, dir);
-    for (const { l, base } of lamps) {
-      l.visible = p.practicals;
-      l.intensity = base * (t === 'night' ? 1 : 0.6);
-    }
-    for (const m of glows) m.emissiveIntensity = p.practicals ? (t === 'night' ? 2.2 : 1.2) : 0;
-    // 夜里从屋外看，窗玻璃透出暖光
-    glass.forEach((m, i) => {
-      if (t === 'night') {
-        m.color.set('#ffcf8f');
-        m.emissive.set('#ffb46b');
-        m.emissiveIntensity = 0.55;
-        m.opacity = 0.75;
-      } else {
-        m.color.copy(glassBase[i].color);
-        m.emissiveIntensity = 0;
-        m.opacity = glassBase[i].opacity;
-      }
-    });
+    world.setTime(t);
+    bloom.enabled = LIGHTING[t].practicals;
   };
 
   // ───────── 剖开：隐藏朝向镜头的墙（连同外墙贴面和内墙漆） ─────────
@@ -190,7 +107,7 @@ async function boot() {
   gtao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.2, thickness: 1, scale: 1.3, samples: 12 });
   const gtaoRender = gtao.render.bind(gtao);
   gtao.render = (...args: Parameters<GTAOPass['render']>) => {
-    const hide = [water.mesh, sky.group].filter((o) => o.visible);
+    const hide = world.aoExclude().filter((o) => o.visible);
     const bg = scene.background;
     scene.background = null;
     for (const o of hide) o.visible = false;
@@ -201,6 +118,8 @@ async function boot() {
   composer.addPass(gtao);
   const hTilt = new ShaderPass(HorizontalTiltShiftShader);
   const vTilt = new ShaderPass(VerticalTiltShiftShader);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(app.clientWidth / 2, app.clientHeight / 2), 0.35, 0.5, 1.1);
+  composer.addPass(bloom);
   composer.addPass(hTilt);
   composer.addPass(vTilt);
   composer.addPass(new OutputPass());
@@ -213,7 +132,10 @@ async function boot() {
   };
   setTilt(false);
 
-  const setRoof = (k: number) => exterior.setOpen(k);
+  /** 屋顶开合；不传 = 按距离自动 */
+  const setRoof = (k?: number) => {
+    roof = k;
+  };
 
   const sitAt = (key: string, seconds = 20) => {
     const seat = anchors.seats.get(key);
@@ -226,8 +148,11 @@ async function boot() {
     for (let t = 0; t < 25; t += 1 / 30) agent.update(1 / 30);
   };
 
+  water.setSize(app.clientWidth, app.clientHeight);
+  let roof: number | undefined;
+  const keep = () => [...house.roomSamples, P(agent.position[0], 0.82 * character.scale, agent.position[1])];
   const render = () => {
-    water.update(1 / 60);
+    world.update(1 / 60, { camera, target: controls.target, keepVisible: keep(), roofOpen: roof });
     composer.render();
   };
   setTime('day');
@@ -243,6 +168,8 @@ async function boot() {
   const api = {
     setTime,
     setRoof,
+    setReflection: (on: boolean) => water.setReflection(on),
+    world,
     setTilt,
     view,
     cutaway,
@@ -250,7 +177,7 @@ async function boot() {
     standAt,
     render,
     get time() {
-      return time;
+      return world.time;
     },
     capture(): string {
       render();

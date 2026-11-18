@@ -1,9 +1,9 @@
 {
   "target": [5.3, 0, 3.9],
   "minPolarDeg": 25,
-  "maxPolarDeg": 70,
+  "maxPolarDeg": 76,
   "minDistance": 4.5,
-  "maxDistance": 24,
+  "maxDistance": 45,
   "startAzimuthDeg": 270,
   "startPolarDeg": 42,
   "startDistance": 14.5,

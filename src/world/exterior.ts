@@ -9,51 +9,31 @@ import type { RoomsConfig } from '../config/types';
 import { P } from '../scene/house';
 import { computeWallLayout, normBounds, wallPieces, type WallSegment } from '../scene/layout';
 import { PALETTE } from './palette';
+import { leafCard, plasterMaps, roofTileMaps, stoneMaps, woodMaps } from './textures';
 
 const BASE_H = 0.45; // 石材墙基高度
 const CLAD = 0.025; // 外墙贴面厚度
 
-function tileTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d')!;
-  const base = new THREE.Color(PALETTE.exterior.roof);
-  const dark = new THREE.Color(PALETTE.exterior.roofDark);
-  g.fillStyle = `#${base.getHexString()}`;
-  g.fillRect(0, 0, 256, 256);
-  // 4 行鱼鳞瓦：每片瓦下沿一道弧形暗边
-  const rows = 4;
-  const cols = 6;
-  for (let rr = 0; rr < rows; rr++) {
-    const y = (rr + 1) * (256 / rows);
-    const off = (rr % 2) * (256 / cols / 2);
-    for (let cc = -1; cc <= cols; cc++) {
-      const x = cc * (256 / cols) + off;
-      const w = 256 / cols;
-      const grad = g.createLinearGradient(0, y - 64, 0, y);
-      grad.addColorStop(0, `rgba(255,236,220,0.10)`);
-      grad.addColorStop(1, `rgba(${Math.round(dark.r * 255)},${Math.round(dark.g * 255)},${Math.round(dark.b * 255)},0.55)`);
-      g.fillStyle = grad;
-      g.beginPath();
-      g.moveTo(x, y - 64);
-      g.lineTo(x, y - 14);
-      g.quadraticCurveTo(x + w / 2, y + 4, x + w, y - 14);
-      g.lineTo(x + w, y - 64);
-      g.closePath();
-      g.fill();
-      g.strokeStyle = `rgba(90,40,28,0.35)`;
-      g.lineWidth = 2;
-      g.beginPath();
-      g.moveTo(x, y - 14);
-      g.quadraticCurveTo(x + w / 2, y + 4, x + w, y - 14);
-      g.stroke();
-    }
+/**
+ * 盒子按世界尺寸重算 UV（每个面取另外两个轴的坐标 / tile 米），相邻墙块的纹理接得上。
+ * offset：网格在世界里的位置（只有平移、没有旋转的盒子才用；旋转过的传 0，用自身坐标）。
+ */
+function worldUV(geo: THREE.BufferGeometry, tile: number, offset = new THREE.Vector3()) {
+  const pos = geo.getAttribute('position');
+  const nor = geo.getAttribute('normal');
+  const uv = geo.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + offset.x;
+    const y = pos.getY(i) + offset.y;
+    const z = pos.getZ(i) + offset.z;
+    const ax = Math.abs(nor.getX(i));
+    const ay = Math.abs(nor.getY(i));
+    const az = Math.abs(nor.getZ(i));
+    if (ax >= ay && ax >= az) uv.setXY(i, z / tile, y / tile);
+    else if (az >= ay) uv.setXY(i, x / tile, y / tile);
+    else uv.setXY(i, x / tile, z / tile);
   }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  return t;
+  uv.needsUpdate = true;
 }
 
 export interface Exterior {
@@ -74,17 +54,23 @@ export function buildExterior(cfg: RoomsConfig): Exterior {
   const layout = computeWallLayout(cfg);
   const T = layout.thickness;
   const E = PALETTE.exterior;
-  const plaster = new THREE.MeshStandardMaterial({ color: E.plaster, roughness: 0.95 });
-  const stone = new THREE.MeshStandardMaterial({ color: E.stone, roughness: 0.9 });
-  const timber = new THREE.MeshStandardMaterial({ color: E.timber, roughness: 0.72 });
-  const timberDark = new THREE.MeshStandardMaterial({ color: E.timberDark, roughness: 0.78 });
-  const trim = new THREE.MeshStandardMaterial({ color: E.trim, roughness: 0.6 });
+  // 写实材质：颜色贴图（乘在底色上）+ 法线贴图，UV 按世界尺寸（worldUV）
+  const pm = plasterMaps();
+  const sm = stoneMaps();
+  const wm = woodMaps();
+  const plaster = new THREE.MeshStandardMaterial({ color: E.plaster, map: pm.map, normalMap: pm.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95 });
+  const stone = new THREE.MeshStandardMaterial({ color: E.stone, map: sm.map, normalMap: sm.normalMap, roughness: 0.9 });
+  const timber = new THREE.MeshStandardMaterial({ color: E.timber, map: wm.map, normalMap: wm.normalMap, roughness: 0.75 });
+  const timberDark = new THREE.MeshStandardMaterial({ color: E.timberDark, map: wm.map, normalMap: wm.normalMap, roughness: 0.8 });
+  const trim = new THREE.MeshStandardMaterial({ color: E.trim, map: pm.map, roughness: 0.7 });
+  const tileOf = (m: THREE.Material) => (m === stone ? 1.2 : m === timber || m === timberDark ? 0.9 : 1.4);
 
   const box = (seg: Pick<WallSegment, 'orient' | 'c'>, s: number, e: number, y0: number, y1: number, across: number, depth: number, mat: THREE.Material) => {
     const len = e - s;
     const geo = seg.orient === 'h' ? new THREE.BoxGeometry(len, y1 - y0, depth) : new THREE.BoxGeometry(depth, y1 - y0, len);
     const m = new THREE.Mesh(geo, mat);
     m.position.copy(seg.orient === 'h' ? P((s + e) / 2, (y0 + y1) / 2, across) : P(across, (y0 + y1) / 2, (s + e) / 2));
+    worldUV(geo, tileOf(mat), m.position);
     m.castShadow = false;
     m.receiveShadow = true;
     return m;
@@ -142,10 +128,16 @@ export function buildExterior(cfg: RoomsConfig): Exterior {
   const ridgeH = eaveH + half * Math.tan(pitch);
   const slope = (half + oy) / Math.cos(pitch);
   const lenX = ix1 - ix0 + ox * 2;
-  const tiles = tileTexture();
-  tiles.repeat.set(lenX / 0.42, slope / 0.36);
-  const roofMat = new THREE.MeshStandardMaterial({ map: tiles, roughness: 0.78, transparent: true });
-  const roofDark = new THREE.MeshStandardMaterial({ color: E.roofDark, roughness: 0.8, transparent: true });
+  const rt = roofTileMaps();
+  // 一张贴图 = 6 列 × 4 行瓦（每片约 0.3 × 0.25 米）
+  const tiles = rt.map.clone();
+  const tilesN = rt.normalMap.clone();
+  for (const t of [tiles, tilesN]) {
+    t.repeat.set(lenX / 1.8, slope / 1.0);
+    t.needsUpdate = true;
+  }
+  const roofMat = new THREE.MeshStandardMaterial({ color: E.roof, map: tiles, normalMap: tilesN, roughness: 0.8, transparent: true });
+  const roofDark = new THREE.MeshStandardMaterial({ color: E.roofDark, map: sm.map, roughness: 0.85, transparent: true });
   const roofMats: THREE.Material[] = [roofMat, roofDark];
   for (const side of [-1, 1]) {
     // side -1：南坡（平面 y 小的一侧）；+1：北坡
@@ -250,7 +242,7 @@ export function buildExterior(cfg: RoomsConfig): Exterior {
   }
   // 南墙（平面 y 最小的外墙）：一张木长椅 + 一片爬藤
   const south = layout.segments.filter((sg) => sg.outward && sg.orient === 'h' && sg.outward[1] < 0);
-  const vineMat = new THREE.MeshToonMaterial({ color: PALETTE.foliage.mid });
+  const vineMat = new THREE.MeshStandardMaterial({ map: leafCard('vine', [92, 128, 60], 17).map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
   for (const sg of south) {
     const across = sg.c - (T / 2 + CLAD);
     const midX = (sg.a + sg.b) / 2;
@@ -271,15 +263,22 @@ export function buildExterior(cfg: RoomsConfig): Exterior {
     // 爬藤：沿墙往上一团团，越往上越稀
     const r0 = Math.abs(Math.sin(sg.a * 12.9898) * 43758.5453) % 1;
     const vx = sg.b - 1.1 - r0 * 0.4;
-    for (let i = 0; i < 26; i++) {
-      const u = i / 26;
-      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + 0.08 * (1 - u), 1), vineMat);
-      const hgt = 0.2 + u * 2.3;
-      leaf.position.copy(P(vx + Math.sin(i * 2.1) * (0.5 - 0.3 * u) + (i % 3) * 0.12, hgt, across - 0.06));
-      leaf.scale.set(1.2, 1, 0.5);
-      leaf.castShadow = true;
-      group.add(leaf);
+    // 70 片叶子卡片用一次实例化绘制
+    const vine = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), vineMat, 70);
+    const o = new THREE.Object3D();
+    for (let i = 0; i < 70; i++) {
+      const u = (i % 35) / 35;
+      const size = 0.32 + 0.14 * (1 - u);
+      const hgt = 0.15 + u * 2.35;
+      o.position.copy(P(vx + Math.sin(i * 2.1) * (0.55 - 0.3 * u) + (i % 3) * 0.1, hgt, across - 0.03 - (i % 4) * 0.02));
+      o.rotation.set(Math.sin(i * 1.7) * 0.5, Math.PI + Math.sin(i * 3.1) * 0.5, Math.sin(i * 0.9) * Math.PI);
+      o.scale.setScalar(size);
+      o.updateMatrix();
+      vine.setMatrixAt(i, o.matrix);
     }
+    vine.castShadow = true;
+    vine.name = 'vine';
+    group.add(vine);
   }
 
   const setOpen = (k: number) => {

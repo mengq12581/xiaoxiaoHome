@@ -8,7 +8,10 @@ import { DragController } from './scene/dragController';
 import { LayoutStore, type StorageLike } from './layout/layoutStore';
 import { StageLayout } from './layout/stageLayout';
 import { CameraRig } from './scene/cameraRig';
-import { createPipeline, createRenderer, setupLighting } from './scene/lookdev';
+import { createPipeline, createRenderer } from './scene/lookdev';
+import { buildWorld } from './world/world';
+import type { TimeOfDay } from './world/palette';
+import { LIGHTING } from './world/palette';
 import { WallFader } from './scene/wallFade';
 import { indexAnchors } from './scene/anchors';
 import { createPathfinder } from './nav/pathfinder';
@@ -54,10 +57,9 @@ function boot(cfg: AppConfig) {
   const furniture = cfg.furniture.items.map(buildFurniture);
   for (const f of furniture) scene.add(f.group);
 
-  // 背景、环境光照、主光、地台（风格基线见 scene/lookdev.ts）
-  const center = house.box.getCenter(new THREE.Vector3());
-  const radius = house.box.getSize(new THREE.Vector3()).setY(0).length() / 2;
-  setupLighting(renderer, scene, center, radius);
+  // 屋外世界：湖心小岛、湖面倒影、天空与环境光照、树和花草、房子外观、室内软装、太阳与夜里的灯（src/world/）
+  const world = buildWorld(renderer, scene, cfg.rooms, cfg.furniture.items, house);
+  const wallById = new Map(house.walls.map((w) => [w.segment.id, w] as const));
 
   // 角色（v0.1 只有一个 active 角色）
   const spec = cfg.characters.characters.find((c) => c.id === cfg.characters.active)!;
@@ -196,17 +198,43 @@ function boot(cfg: AppConfig) {
   const layoutBar = createLayoutBar(app, { undo: () => drag.undo(), reset: () => drag.reset(), exportJson: () => void exportLayout() });
   syncLayoutBar();
 
-  const pipeline = createPipeline(renderer, scene, rig.camera, () => [
-    ...house.walls.filter((w) => w.opacity < 0.98).map((w) => w.group),
-    ...house.glass,
-    contact.group,
-    ...drag.overlayObjects,
-  ]);
+  const pipeline = createPipeline(
+    renderer,
+    scene,
+    rig.camera,
+    () => [
+      ...house.walls.filter((w) => w.opacity < 0.98).map((w) => w.group),
+      ...house.glass,
+      contact.group,
+      ...drag.overlayObjects,
+      ...world.aoExclude(),
+    ],
+    [{ name: '关闭湖面倒影', run: () => world.water.setReflection(false) }],
+  );
+
+  // 时间：地址栏 ?time=day|golden|night，开发面板可切换（以后跟本机时钟、天气走，docs/验收问题.md C14）
+  const setTime = (t: TimeOfDay) => {
+    world.setTime(t);
+    pipeline.setBloom(LIGHTING[t].practicals);
+    flog.write('info', `[world] 时间：${t}`);
+  };
+  const qTime = new URLSearchParams(location.search).get('time');
+  setTime(qTime === 'golden' || qTime === 'night' ? qTime : 'day');
+
+  /** 屋外世界 + 透明墙：每帧一次；截图 / 快进时连推几次跳过渐变 */
+  const syncScene = (dt: number) => {
+    const keep = fadeTargets();
+    world.update(dt, { camera: rig.camera, target: rig.controls.target, keepVisible: keep });
+    // 屋顶盖着（远看全岛）时不剖墙
+    fader.update(rig.camera, keep, dt, world.roofOpen > 0.5);
+    world.syncWalls((id) => wallById.get(id)?.opacity ?? 1, cfg.camera.wallFadeOpacity);
+  };
 
   const onResize = () => {
     renderer.setSize(app.clientWidth, app.clientHeight);
     pipeline.setSize(app.clientWidth, app.clientHeight);
     rig.resize(app.clientWidth, app.clientHeight);
+    world.setSize(app.clientWidth, app.clientHeight);
   };
   window.addEventListener('resize', onResize);
   onResize();
@@ -255,6 +283,10 @@ function boot(cfg: AppConfig) {
         { label: '快进 1 分钟', run: () => fastForward(60) },
         { label: '非法活动(fly)', run: () => send('fly') },
         { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 55, cfg.camera.minDistance) },
+        { label: '镜头看全岛', run: () => rig.setView(rig.view.azimuthDeg, 60, cfg.camera.maxDistance) },
+        { label: '白天', run: () => setTime('day') },
+        { label: '黄昏', run: () => setTime('golden') },
+        { label: '夜晚', run: () => setTime('night') },
       ])
     : null;
 
@@ -277,7 +309,7 @@ function boot(cfg: AppConfig) {
     syncPathLine();
     rig.update();
     drag.update(performance.now());
-    fader.update(rig.camera, fadeTargets(), dt);
+    syncScene(dt);
     pipeline.render();
     pipeline.reportFrame(dt);
   };
@@ -293,7 +325,7 @@ function boot(cfg: AppConfig) {
       fpsTime = 0;
       const v = rig.view;
       hud.setStats(
-        `${fps} fps · 方位 ${v.azimuthDeg.toFixed(0)}° · 俯仰 ${v.polarDeg.toFixed(0)}° · 距离 ${v.distance.toFixed(1)} m · 透明墙 ${fader.occluding.size}`,
+        `${fps} fps · 方位 ${v.azimuthDeg.toFixed(0)}° · 俯仰 ${v.polarDeg.toFixed(0)}° · 距离 ${v.distance.toFixed(1)} m · 透明墙 ${fader.occluding.size} · 透明树 ${world.vegetation.trees.occluding}`,
       );
       const d = director.snapshot();
       const next =
@@ -336,6 +368,8 @@ function boot(cfg: AppConfig) {
       scene,
       rig,
       fader,
+      world,
+      setTime,
       pipeline,
       renderer,
       agent,
@@ -354,7 +388,7 @@ function boot(cfg: AppConfig) {
       setView: (az: number, polar: number, dist: number) => {
         rig.setView(az, polar, dist);
         // 跳过渐变，直接到位，便于截图
-        for (let i = 0; i < 30; i++) fader.update(rig.camera, fadeTargets(), 0.1);
+        for (let i = 0; i < 30; i++) syncScene(0.1);
       },
       /** 后台标签页没有动画帧时，用固定步长推进角色（秒） */
       simulate(seconds: number, until?: () => boolean) {
@@ -367,7 +401,7 @@ function boot(cfg: AppConfig) {
         syncContact();
         syncPathLine();
         rig.update();
-        for (let i = 0; i < 30; i++) fader.update(rig.camera, fadeTargets(), 0.1);
+        for (let i = 0; i < 30; i++) syncScene(0.1);
         return { t: +t.toFixed(2), state: agent.state, pos: agent.position.map((v) => +v.toFixed(3)), heading: +agent.headingDeg.toFixed(1) };
       },
       occluding: () => [...fader.occluding],

@@ -25,9 +25,11 @@ export class WallFader {
 
   /**
    * @param targets 需要保持可见的点（世界坐标）。M1 没有角色时传各房间中心。
+   * @param active 屋顶盖着（远看全岛）时传 false：墙都恢复实体，不剖开
    */
-  update(camera: THREE.Camera, targets: THREE.Vector3[], dt: number) {
+  update(camera: THREE.Camera, targets: THREE.Vector3[], dt: number, active = true) {
     this.occluding.clear();
+    if (!active) targets = [];
     const origin = camera.getWorldPosition(new THREE.Vector3());
     const dir = new THREE.Vector3();
     for (const t of targets) {

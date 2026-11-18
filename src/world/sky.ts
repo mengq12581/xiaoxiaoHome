@@ -1,11 +1,15 @@
-// 天空与远景：
-//   - 天穹：从天顶到地平线的渐变，太阳 / 月亮周围一圈光晕，夜里有星星；
-//   - 云：几片手绘感的扁平云（受光面 + 背光面两个颜色），不做体积云（以后天气系统再做）；
+// 天空与远景（写实版）：
+//   - 白天 / 黄昏：物理天空模型（Preetham，three 自带的 Sky），太阳高度决定天色与地平线的暖光；
+//   - 夜晚：深蓝渐变天穹 + 月亮 + 星星（物理模型在太阳落下后只剩一片黑，不好看）；
+//   - 环境光照（IBL）直接从这片天空生成（world.ts 里用 PMREM），房子和树的明暗跟天色一致；
+//   - 云：一圈柔边的云片（噪声生成浓度），不做体积云（以后天气系统再做）；
 //   - 湖对岸：两圈低矮的山影，近的深、远的浅，靠雾融进地平线。
 // 这些都由「时间」预设驱动（palette.ts 的 LIGHTING），天气以后在这里接（docs/验收问题.md C14）。
 
 import * as THREE from 'three';
+import { Sky as PhysicalSky } from 'three/examples/jsm/objects/Sky.js';
 import { fbm, rng } from './noise';
+import { cloudShape } from './textures';
 import type { LightingPreset } from './palette';
 
 const skyVert = /* glsl */ `
@@ -37,48 +41,6 @@ void main() {
 }
 `;
 
-/** 一片云的贴图：几团圆形叠在一起，上半部受光、下沿带一点背光色（用 alpha + 两个颜色分开画） */
-function cloudTexture(seed: number): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  const r = rng(seed);
-  // R 通道 = 受光程度，A = 形状
-  const blobs: [number, number, number][] = [];
-  const n = 6 + Math.floor(r() * 4);
-  for (let i = 0; i < n; i++) {
-    const x = 90 + (i / (n - 1)) * 330 + (r() - 0.5) * 40;
-    const rad = 38 + r() * 46 * Math.sin((i / (n - 1)) * Math.PI) + 18;
-    blobs.push([x, 175 - rad * 0.55 - r() * 25, rad]);
-  }
-  g.fillStyle = '#000';
-  g.fillRect(0, 0, 512, 256);
-  for (const [x, y, rad] of blobs) {
-    const grad = g.createRadialGradient(x, y - rad * 0.35, rad * 0.1, x, y, rad);
-    grad.addColorStop(0, 'rgba(255,0,0,1)');
-    grad.addColorStop(0.65, 'rgba(255,0,0,1)');
-    grad.addColorStop(1, 'rgba(120,0,0,1)');
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, rad, 0, Math.PI * 2);
-    g.fill();
-  }
-  // 底边压平
-  g.fillStyle = '#000';
-  g.fillRect(0, 182, 512, 74);
-  const img = g.getImageData(0, 0, 512, 256);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = img.data[i];
-    img.data[i + 3] = v > 8 ? 255 : 0;
-    img.data[i] = v;
-  }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
-  return t;
-}
-
 const cloudFrag = /* glsl */ `
 uniform sampler2D map;
 uniform vec3 uLit, uShade;
@@ -86,10 +48,9 @@ uniform float uOpacity;
 varying vec2 vUv;
 void main() {
   vec4 s = texture2D(map, vUv);
-  if (s.a < 0.5) discard;
-  float lit = smoothstep(0.45, 0.9, s.r) * smoothstep(0.0, 0.35, vUv.y - 0.25);
-  vec3 col = mix(uShade, uLit, lit);
-  gl_FragColor = vec4(col, uOpacity);
+  if (s.a < 0.01) discard;
+  vec3 col = mix(uShade, uLit, s.r);
+  gl_FragColor = vec4(col, s.a * uOpacity);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -101,6 +62,8 @@ void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(
 
 export interface Sky {
   group: THREE.Group;
+  /** 只有天空（物理天空 + 夜空穹顶）的场景：生成环境光照用 */
+  envScene: THREE.Scene;
   setLighting(p: LightingPreset, sunDir: THREE.Vector3): void;
 }
 
@@ -121,17 +84,32 @@ export function buildSky(center: THREE.Vector3): Sky {
       uStars: { value: 0 },
     },
   });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(500, 48, 24), skyMat);
+  const domeGeo = new THREE.SphereGeometry(500, 48, 24);
+  const dome = new THREE.Mesh(domeGeo, skyMat);
   dome.position.copy(center);
   dome.renderOrder = -10;
   dome.frustumCulled = false;
   group.add(dome);
+  const physical = new PhysicalSky();
+  physical.scale.setScalar(900);
+  physical.position.copy(center);
+  physical.renderOrder = -10;
+  physical.frustumCulled = false;
+  group.add(physical);
+  const physMat = physical.material as THREE.ShaderMaterial;
 
-  // 云：一圈 11 片，距离 170～320 米，高 18～60 米
+  // 生成环境光照用的天空场景：和上面共用材质，所以天色一变它也跟着变
+  const envScene = new THREE.Scene();
+  const envDome = new THREE.Mesh(domeGeo, skyMat);
+  const envPhys = new THREE.Mesh(physical.geometry, physMat);
+  envPhys.scale.setScalar(900);
+  envScene.add(envDome, envPhys);
+
+  // 云：一圈 14 片，距离 170～330 米，高 30～80 米
   const clouds: THREE.ShaderMaterial[] = [];
   const r = rng(42);
-  for (let i = 0; i < 11; i++) {
-    const tex = cloudTexture(100 + i);
+  for (let i = 0; i < 14; i++) {
+    const tex = cloudShape(100 + i);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cloudVert,
       fragmentShader: cloudFrag,
@@ -140,11 +118,11 @@ export function buildSky(center: THREE.Vector3): Sky {
       uniforms: { map: { value: tex }, uLit: { value: new THREE.Color() }, uShade: { value: new THREE.Color() }, uOpacity: { value: 1 } },
     });
     clouds.push(mat);
-    const w = 70 + r() * 70;
+    const w = 90 + r() * 110;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 2), mat);
-    const a = (i / 11) * Math.PI * 2 + r() * 0.4;
-    const dist = 170 + r() * 150;
-    m.position.set(center.x + Math.cos(a) * dist, 18 + r() * 42, center.z + Math.sin(a) * dist);
+    const a = (i / 14) * Math.PI * 2 + r() * 0.4;
+    const dist = 190 + r() * 140;
+    m.position.set(center.x + Math.cos(a) * dist, 30 + r() * 50, center.z + Math.sin(a) * dist);
     m.lookAt(center.x, m.position.y, center.z);
     m.renderOrder = -9;
     group.add(m);
@@ -184,7 +162,19 @@ export function buildSky(center: THREE.Vector3): Sky {
 
   return {
     group,
+    envScene,
     setLighting(p, sunDir) {
+      const phys = p.physicalSky;
+      physical.visible = envPhys.visible = !!phys;
+      dome.visible = envDome.visible = !phys;
+      if (phys) {
+        const pu = physMat.uniforms;
+        pu.turbidity.value = phys.turbidity;
+        pu.rayleigh.value = phys.rayleigh;
+        pu.mieCoefficient.value = phys.mieCoefficient;
+        pu.mieDirectionalG.value = phys.mieDirectionalG;
+        pu.sunPosition.value.copy(sunDir);
+      }
       const u = skyMat.uniforms;
       u.uZenith.value.set(p.sky.zenith);
       u.uHorizon.value.set(p.sky.horizon);

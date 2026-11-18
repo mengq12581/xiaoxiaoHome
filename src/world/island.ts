@@ -2,7 +2,7 @@
 //   - 岛的轮廓 = 绕房子的椭圆 + 几层正弦起伏，保证房子四周至少留 3 米多的草地；
 //   - 房子底下和四周一圈是平台（比地板略低），往外慢慢降到沙滩、再没入水下；
 //   - 屋后有一个小土坡（放一棵大树，打破地平线）；
-//   - 颜色按「受光草地 / 中间 / 背光草地 / 小路 / 沙滩 / 岩石」几块大色面上色（顶点色），不做逐根草的细节。
+//   - 颜色按「草地（几种深浅自然过渡）/ 小路 / 沙滩 / 岩石」上顶点色，再叠一张可平铺的细节贴图（草叶的细碎明暗 + 凹凸）。
 // 同时导出：任意平面点的地面高度、水深贴图（给湖面着色用）、小路中线（给植被避让用）。
 
 import * as THREE from 'three';
@@ -10,6 +10,7 @@ import type { Vec2 } from '../config/types';
 import { P } from '../scene/house';
 import { fbm, smoothstep } from './noise';
 import { PALETTE } from './palette';
+import { groundDetail } from './textures';
 
 export const WATER_LEVEL = -0.4;
 /** 房子底下平台的高度（地板盒子底面是 -0.06） */
@@ -121,6 +122,7 @@ export function buildIsland(spec: IslandSpec): Island {
   const ny = Math.ceil((extent.y1 - extent.y0) / step) + 1;
   const pos = new Float32Array(nx * ny * 3);
   const col = new Float32Array(nx * ny * 3);
+  const uvs = new Float32Array(nx * ny * 2);
   const c = (hex: string) => new THREE.Color(hex);
   const G = PALETTE.grass;
   const Gr = PALETTE.ground;
@@ -141,9 +143,12 @@ export function buildIsland(spec: IslandSpec): Island {
       pos[k] = w.x;
       pos[k + 1] = w.y;
       pos[k + 2] = w.z;
-      // 草地三块大色面：低频噪声量化成三档，交界处稍微柔一点
+      // 细节贴图按平面坐标平铺（每 1.6 米一张）
+      uvs[(j * nx + i) * 2] = p[0] / 1.6;
+      uvs[(j * nx + i) * 2 + 1] = p[1] / 1.6;
+      // 草地：低频噪声在三种深浅之间自然过渡（写实：不再量化成硬色块）
       const n = fbm(p[0] * 0.12 + 3.1, p[1] * 0.12 - 1.7, 3, 11);
-      const band = smoothstep(0.42, 0.47, n) + smoothstep(0.58, 0.63, n);
+      const band = smoothstep(0.36, 0.5, n) + smoothstep(0.52, 0.68, n);
       tmp.copy(cShade).lerp(cMid, Math.min(1, band)).lerp(cLit, Math.max(0, band - 1));
       // 屋檐下、房子脚下偏暗一点
       tmp.lerp(cShade, 0.35 * (1 - smoothstep(0.2, 1.4, houseDist(p))));
@@ -175,9 +180,14 @@ export function buildIsland(spec: IslandSpec): Island {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+  const detail = groundDetail();
+  const mesh = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ vertexColors: true, map: detail.map, normalMap: detail.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.95, metalness: 0 }),
+  );
   mesh.receiveShadow = true;
   mesh.name = 'island';
 

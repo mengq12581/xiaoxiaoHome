@@ -112,8 +112,8 @@ function stateService(): Plugin {
       running = null;
     });
   };
-  // 跑单测时 Vitest 也会加载这份配置，不能顺手把服务起起来
-  if (process.env.VITEST) return { name: 'xiaoxiao-state-service' };
+  // 跑单测（Vitest）和 vite-node（npm run state-server 自己就是状态服务）时也会加载这份配置，不能再顺手起一个
+  if (process.env.VITEST || process.argv.some((a) => a.includes('vite-node'))) return { name: 'xiaoxiao-state-service' };
   return {
     name: 'xiaoxiao-state-service',
     configureServer: mount,
