@@ -175,6 +175,7 @@ export const FURNITURE_KINDS = [
   'nightstand',
   'wardrobe',
   'shoe_cabinet',
+  'kitchenette',
   'vanity',
   'toilet',
   'shower',

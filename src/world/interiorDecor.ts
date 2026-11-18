@@ -11,6 +11,7 @@ import { P } from '../scene/house';
 import { computeWallLayout, localToPlan, normBounds, wallPieces } from '../scene/layout';
 import { rng } from './noise';
 import { PALETTE } from './palette';
+import { rectHitsCircle } from '../layout/layoutStore';
 import type { Practical } from './vegetation';
 
 function rugTexture(base: string, border: string): THREE.CanvasTexture {
@@ -196,6 +197,8 @@ export function buildInteriorDecor(cfg: RoomsConfig, items: FurnitureItem[]): In
   const leafMat = new THREE.MeshStandardMaterial({ color: PALETTE.foliage.mid, roughness: 0.8 });
   const potMat = new THREE.MeshStandardMaterial({ color: '#e9dccb', roughness: 0.7 });
   const plant = (p: Vec2, s = 1) => {
+    // 角落已经放了家具（例如客厅西南角的厨房角）就不摆绿植
+    if (items.some((it) => it.kind !== 'window_spot' && rectHitsCircle(it, p, 0.18 * s))) return;
     const g = new THREE.Group();
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * s, 0.12 * s, 0.32 * s, 20), potMat);
     pot.position.y = 0.16 * s;

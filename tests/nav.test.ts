@@ -86,6 +86,24 @@ describe('寻路', () => {
     assertClear(pf, res.path);
   });
 
+  it('厨房角（客厅南墙靠玄关一侧）不挡玄关到客厅的动线：从入户门到沙发、电视前、卧室门都不用绕', () => {
+    const pf = make();
+    const k = item('kitchenette');
+    expect(k.room).toBe('living');
+    expect(k.size[0]).toBeCloseTo(1.8);
+    const door: Vec2 = [0.4, 3.55];
+    for (const goal of [approachOf('sofa'), [5.2, 2.95] as Vec2, [2.95, 3.5] as Vec2]) {
+      const res = pf.findPath(door, goal);
+      expect(res.ok, `到 ${goal}`).toBe(true);
+      if (!res.ok) continue;
+      assertClear(pf, res.path);
+      // 和没有厨房角时一样短（厨房角不在路上）
+      const without = createPathfinder(raw.rooms, raw.furniture.items.filter((i: { id: string }) => i.id !== 'kitchenette')).findPath(door, goal);
+      expect(without.ok).toBe(true);
+      if (without.ok) expect(pathLength(res.path)).toBeCloseTo(pathLength(without.path), 3);
+    }
+  });
+
   it('客厅走到阳台：只能从玻璃门旁的通道过，不穿玻璃', () => {
     const pf = make();
     const res = pf.findPath([4.9, 2.95], [9.7, 5.0]);

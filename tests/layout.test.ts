@@ -93,7 +93,7 @@ describe('家具局部坐标', () => {
   it('沙发靠下墙朝上：坐点在座垫前半（小腿能垂下），人面朝 +y（电视方向）', () => {
     const sofa = item('sofa');
     const pose = anchorPose(sofa, sofa.anchors[0]);
-    expect(pose.plan[0]).toBeCloseTo(4.9);
+    expect(pose.plan[0]).toBeCloseTo(5.2);
     expect(pose.plan[1]).toBeCloseTo(0.86);
     expect(pose.headingDeg).toBeCloseTo(90);
     // 电视在沙发正前方、靠上墙

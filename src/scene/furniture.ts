@@ -316,6 +316,114 @@ const MODELS: Record<string, ModelFn> = {
     b.box(w * 0.86 - 0.07, 0.65, 0.012, C.mirror, 0, h + 0.62, d / 2 - 0.04, 'paint', 'mirror', mirrorMat);
   },
 
+  kitchenette(b, w, d, h) {
+    // 厨房角（docs/验收问题.md C18）：靠墙一条操作台 + 水槽 + 两格吊柜；台面上一只电水壶、两只杯子。
+    // 不做灶、不明火、不排烟。局部 +z 是墙，-z 是人站的一侧。
+    const kick = 0.1;
+    const topT = 0.04;
+    // 踢脚（往里缩）+ 柜体
+    b.box(w - 0.04, kick, d - 0.1, C.charcoal, 0, kick / 2, 0.04);
+    const bodyH = h - kick - topT;
+    b.box(w, bodyH, d - 0.03, C.warmWhite, 0, kick + bodyH / 2, 0.015);
+    // 柜门：左边两扇（水槽柜），右边三层抽屉；浅木门板 + 深色细长拉手
+    const fz = -d / 2 + 0.006;
+    const third = w / 3;
+    const doorH = bodyH - 0.03;
+    const sinkW = third * 2;
+    for (let i = 0; i < 2; i++) {
+      const x = -w / 2 + sinkW / 4 + (sinkW / 2) * i;
+      b.box(sinkW / 2 - 0.012, doorH, 0.018, C.woodLight, x, kick + bodyH / 2, fz, 'wood');
+      b.box(0.012, 0.16, 0.014, C.charcoal, x + (i === 0 ? 1 : -1) * (sinkW / 4 - 0.05), kick + bodyH - 0.14, fz - 0.014);
+    }
+    const drawerH = (doorH - 0.02) / 3;
+    for (let i = 0; i < 3; i++) {
+      const y = kick + 0.015 + drawerH / 2 + i * (drawerH + 0.01);
+      b.box(third - 0.012, drawerH, 0.018, C.woodLight, w / 2 - third / 2, y, fz, 'wood');
+      b.box(0.16, 0.012, 0.014, C.charcoal, w / 2 - third / 2, y + drawerH / 2 - 0.05, fz - 0.014);
+    }
+    // 台面：在水槽处开洞（四块拼成）
+    const sx = -w / 2 + sinkW / 2; // 水槽中心
+    const sw = 0.52;
+    const sd = 0.38;
+    const sz = -0.03;
+    const ty = h - topT / 2;
+    const td = d + 0.02;
+    const tz = -0.01;
+    const top = (x0: number, x1: number, z0: number, z1: number) => b.box(x1 - x0, topT, z1 - z0, C.cream, (x0 + x1) / 2, ty, (z0 + z1) / 2);
+    top(-w / 2 - 0.01, sx - sw / 2, tz - td / 2, tz + td / 2);
+    top(sx + sw / 2, w / 2 + 0.01, tz - td / 2, tz + td / 2);
+    top(sx - sw / 2, sx + sw / 2, tz - td / 2, sz - sd / 2);
+    top(sx - sw / 2, sx + sw / 2, sz + sd / 2, tz + td / 2);
+    // 不锈钢水槽：底板 + 四壁，沉到台面以下
+    const steel = soft(0xb9bec1, { roughness: 0.32, metalness: 0.6 });
+    const depth = 0.17;
+    const plate = (pw: number, ph: number, pd: number, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(pw, ph, pd), steel);
+      m.position.set(x, y, z);
+      m.receiveShadow = true;
+      b.g.add(m);
+    };
+    plate(sw, 0.01, sd, sx, h - topT - depth, sz);
+    plate(sw, depth, 0.01, sx, h - topT - depth / 2, sz - sd / 2);
+    plate(sw, depth, 0.01, sx, h - topT - depth / 2, sz + sd / 2);
+    plate(0.01, depth, sd, sx - sw / 2, h - topT - depth / 2, sz);
+    plate(0.01, depth, sd, sx + sw / 2, h - topT - depth / 2, sz);
+    plate(0.05, 0.004, 0.05, sx, h - topT - depth + 0.008, sz); // 下水口
+    // 龙头：底座 + 立管 + 鹅颈弯（半圆环）+ 单把手
+    const tapZ = sz + sd / 2 + 0.06;
+    b.cyl(0.024, 0.026, 0.02, C.faucet, sx, h + 0.01, tapZ, 'paint', 16, steel);
+    b.cyl(0.012, 0.012, 0.24, C.faucet, sx, h + 0.13, tapZ, 'paint', 12, steel);
+    const neck = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 8, 20, Math.PI), steel);
+    neck.rotation.y = Math.PI / 2;
+    neck.position.set(sx, h + 0.25, tapZ - 0.075);
+    neck.castShadow = true;
+    b.g.add(neck);
+    b.cyl(0.013, 0.011, 0.05, C.faucet, sx, h + 0.225, tapZ - 0.15, 'paint', 12, steel);
+    b.box(0.012, 0.012, 0.07, C.faucet, sx + 0.035, h + 0.06, tapZ - 0.01, 'paint', undefined, steel);
+    // 墙面防溅：一条浅色瓷砖，从台面到吊柜底
+    const cabBottom = h + 0.62;
+    b.box(w, cabBottom - h, 0.012, C.tile, 0, h + (cabBottom - h) / 2, d / 2 - 0.006);
+    // 两格吊柜（每格一扇门，拉手在下沿）
+    const cabH = 0.62;
+    const cabD = 0.33;
+    const cabW = (w - 0.02) / 2;
+    for (let i = 0; i < 2; i++) {
+      const x = -w / 2 + cabW / 2 + i * (cabW + 0.02);
+      const z = d / 2 - cabD / 2 - 0.012;
+      b.box(cabW, cabH, cabD, C.warmWhite, x, cabBottom + cabH / 2, z);
+      b.box(cabW - 0.014, cabH - 0.014, 0.018, C.woodLight, x, cabBottom + cabH / 2, z - cabD / 2 - 0.008, 'wood');
+      b.box(0.14, 0.012, 0.014, C.charcoal, x + (i === 0 ? 1 : -1) * (cabW / 2 - 0.12), cabBottom + 0.05, z - cabD / 2 - 0.022);
+    }
+    // 电水壶（底座 + 壶身 + 盖 + 提手 + 壶嘴），放在抽屉柜那一侧
+    const kx = w / 2 - third / 2 - 0.12;
+    const kz = 0.02;
+    b.cyl(0.078, 0.082, 0.02, C.charcoal, kx, h + 0.01, kz, 'paint', 24);
+    b.cyl(0.058, 0.074, 0.17, C.warmWhite, kx, h + 0.105, kz, 'paint', 24);
+    b.cyl(0.05, 0.057, 0.014, C.cream, kx, h + 0.197, kz, 'paint', 24);
+    b.ball(0.014, C.charcoal, kx, h + 0.21, kz);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.011, 8, 16, Math.PI), mat(C.charcoal));
+    // 半圆环先转成「右半边」，再转到壶背后（+z），竖着贴在壶身上
+    handle.rotation.set(0, -Math.PI / 2, -Math.PI / 2);
+    handle.position.set(kx, h + 0.11, kz + 0.045);
+    handle.castShadow = true;
+    b.g.add(handle);
+    const spout = b.cyl(0.008, 0.016, 0.06, C.warmWhite, kx, h + 0.16, kz - 0.085, 'paint', 12);
+    spout.rotation.x = -0.9;
+    // 两只杯子：一只奶白、一只陶土色，杯口里面颜色深一点（看得出是空心的）
+    for (const [cx, cz, color] of [
+      [w / 2 - 0.2, -0.1, C.ceramic],
+      [w / 2 - 0.1, -0.03, C.terracotta],
+    ] as const) {
+      b.cyl(0.036, 0.032, 0.088, color, cx, h + 0.044, cz, 'paint', 20);
+      b.cyl(0.03, 0.03, 0.004, 0x6b5a4d, cx, h + 0.086, cz, 'paint', 20);
+      const ear = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 12, Math.PI), mat(color));
+      ear.rotation.z = -Math.PI / 2;
+      ear.position.set(cx + 0.034, h + 0.046, cz);
+      ear.castShadow = true;
+      b.g.add(ear);
+    }
+  },
+
   toilet(b, w, d, h) {
     // 水箱靠墙（+z），坐圈朝外
     b.box(w, h * 0.5, 0.18, C.ceramic, 0, h * 0.7, d / 2 - 0.09);

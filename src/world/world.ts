@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import type { FurnitureItem, RoomsConfig, Vec2 } from '../config/types';
 import { P, type HouseView } from '../scene/house';
-import { houseBounds } from '../scene/layout';
+import { computeWallLayout, houseBounds } from '../scene/layout';
 import { buildExterior, type Exterior } from './exterior';
 import { makeFadeable, type FadeFn } from './fadeable';
 import { buildInteriorDecor, type InteriorDecor } from './interiorDecor';
@@ -71,7 +71,18 @@ export function buildWorld(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ro
   const center = P(island.center[0], 0, island.center[1]);
   const sky = buildSky(center);
   const indoorX1 = Math.max(...rooms.rooms.filter((r) => !r.outdoor).map((r) => Math.max(r.bounds[0][0], r.bounds[1][0])));
-  const vegetation = buildVegetation(island, hb, indoorX1);
+  // 门窗正前方 1.5 米处：大树不种在这些点 3.4 米以内（树冠不挡窗、不挡门）
+  const wl = computeWallLayout(rooms);
+  const openingViews: Vec2[] = wl.segments
+    .filter((sg) => sg.outward)
+    .flatMap((sg) =>
+      sg.openings.map((op): Vec2 => {
+        const m = (op.s + op.e) / 2;
+        const o = sg.outward!;
+        return sg.orient === 'h' ? [m, sg.c + o[1] * 1.5] : [sg.c + o[0] * 1.5, m];
+      }),
+    );
+  const vegetation = buildVegetation(island, hb, indoorX1, openingViews);
   const exterior = buildExterior(rooms);
   const decor = buildInteriorDecor(rooms, items);
   scene.add(island.mesh, water.mesh, sky.group, vegetation.group, exterior.group, decor.group);

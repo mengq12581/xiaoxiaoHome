@@ -58,7 +58,7 @@ describe('拖家具：人物配合', () => {
   it('把沙发拖到客厅另一角：下一次看电视走到新位置，准确坐在新交互点上', () => {
     const s = stage();
     s.layout.beginDrag('sofa');
-    for (let x = 4.9; x <= 6.51; x += 0.05) s.layout.dragTo('sofa', [+x.toFixed(2), 0.52]);
+    for (let x = 5.2; x <= 6.51; x += 0.05) s.layout.dragTo('sofa', [+x.toFixed(2), 0.52]);
     expect(s.layout.endDrag()).toBe(true);
     const seat = s.anchors().seats.get('sofa:sofa_seat')!;
     expect(near(seat.plan, [6.5, 0.86])).toBe(true); // 交互点跟着沙发走
@@ -196,7 +196,7 @@ describe('拖家具：人物配合', () => {
     s.run(40, s.acting('watch_tv'));
     expect(s.layout.undo()).toEqual(['sofa']);
     const seat = s.anchors().seats.get('sofa:sofa_seat')!;
-    expect(near(seat.plan, [4.9, 0.86])).toBe(true);
+    expect(near(seat.plan, [5.2, 0.86])).toBe(true);
     expect(s.run(40, () => s.agent.state === 'seated' && near(s.agent.position, seat.plan, 0.001))).toBe(true);
     expect(s.layout.undo()).toEqual([]);
     s.layout.beginDrag('coffee_table');

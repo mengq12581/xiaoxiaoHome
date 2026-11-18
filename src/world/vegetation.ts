@@ -52,7 +52,7 @@ function rockGeometry(seed: number): THREE.BufferGeometry {
   return g;
 }
 
-export function buildVegetation(island: Island, house: { x0: number; y0: number; x1: number; y1: number }, indoorX1 = house.x1): Vegetation {
+export function buildVegetation(island: Island, house: { x0: number; y0: number; x1: number; y1: number }, indoorX1 = house.x1, openingViews: Vec2[] = []): Vegetation {
   const group = new THREE.Group();
   group.name = 'vegetation';
   const r = rng(2026);
@@ -86,7 +86,8 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   add([house.x0 + 1.2, house.y1 + 4.6], 1.2, 'green'); // 屋后土坡上一棵大树，打破地平线
   const placed: Vec2[] = spots.map((s) => s.p);
   // 绿叶大树只种在房子北面和东西两侧靠后，把南面、门前留给樱花和花草
-  for (const p of scatter(5, (p) => ok(p, 2.0, 3.0, 1.6) && p[1] > house.y0 + 2.5, 4.6, 6000, placed)) {
+  const clearOfOpenings = (p: Vec2) => openingViews.every((v) => Math.hypot(v[0] - p[0], v[1] - p[1]) > 3.4);
+  for (const p of scatter(5, (p) => ok(p, 2.0, 3.0, 1.6) && p[1] > house.y0 + 2.5 && clearOfOpenings(p), 4.6, 6000, placed)) {
     add(p, 0.7 + r() * 0.35, 'green');
     placed.push(p);
   }

@@ -66,7 +66,7 @@ describe('布局：移动、旋转、联动组', () => {
     expect(s.tryMove('sofa', [6.5, 0.52])).toBeNull();
     expect(pos(s, 'sofa')).toEqual([6.5, 0.52]);
     expect(s.tryMove('sofa', [6.5, 0.3])).toBe('outside_room');
-    expect(s.tryMove('sofa', [4.9, 1.9])).toBe('overlap'); // 茶几在这儿
+    expect(s.tryMove('sofa', [5.2, 1.9])).toBe('overlap'); // 茶几在这儿
     expect(pos(s, 'sofa')).toEqual([6.5, 0.52]);
     expect(s.tryMove('sofa', [6.5, 1.0], { position: [6.5, 1.6], radius: 0.25 })).toBe('on_character');
     expect(s.tryMove('sofa', [6.5, 1.0], { position: [6.5, 2.6], radius: 0.25 })).toBeNull();
@@ -75,9 +75,9 @@ describe('布局：移动、旋转、联动组', () => {
   it('她本来就坐在上面的家具可以拖走（原来就压着的不算「压到人」）', () => {
     const { items, rooms } = fresh();
     const s = new LayoutStore(items, rooms);
-    const seated = { position: [4.9, 0.86] as Vec2, radius: 0.25 };
+    const seated = { position: [5.2, 0.86] as Vec2, radius: 0.25 };
     expect(rectHitsCircle(s.item('sofa')!, seated.position, seated.radius)).toBe(true);
-    expect(s.tryMove('sofa', [5.0, 0.6], seated)).toBeNull();
+    expect(s.tryMove('sofa', [5.3, 0.6], seated)).toBeNull();
   });
 
   it('可以挪到另一个房间，room 字段跟着变', () => {
@@ -143,7 +143,7 @@ describe('撤销、保存、恢复默认', () => {
     expect(s.undo()).toEqual(['coffee_table']);
     expect(s.item('coffee_table')!.rotation).toBe(0);
     expect(s.undo()).toEqual(['sofa']);
-    expect(pos(s, 'sofa')).toEqual([4.9, 0.52]); // 一次拖动算一步
+    expect(pos(s, 'sofa')).toEqual([5.2, 0.52]); // 一次拖动算一步
     expect(s.canUndo).toBe(false);
   });
 
@@ -175,7 +175,7 @@ describe('撤销、保存、恢复默认', () => {
     s.tryMove('sofa', [6.5, 0.52]);
     s.commit(before);
     expect(s.reset()).toEqual(['sofa']);
-    expect(pos(s, 'sofa')).toEqual([4.9, 0.52]);
+    expect(pos(s, 'sofa')).toEqual([5.2, 0.52]);
     expect(storage.getItem(LAYOUT_KEY)).toBeNull();
     expect(s.undo()).toEqual(['sofa']);
     expect(pos(s, 'sofa')).toEqual([6.5, 0.52]);
@@ -213,7 +213,7 @@ describe('撤销、保存、恢复默认', () => {
     expect(mk('{"version":2}').r).toBe('discarded');
     expect(mk(JSON.stringify({ ...good, items: [{ id: 'spaceship', position: [1, 1], rotation: 0 }] })).r).toBe('discarded');
     expect(mk(JSON.stringify({ ...good, items: good.items.map((i) => (i.id === 'sofa' ? { ...i, position: [20, 20] } : i)) })).r).toBe('discarded');
-    const bad = mk(JSON.stringify({ ...good, items: good.items.map((i) => (i.id === 'sofa' ? { ...i, position: [4.9, 1.9] } : i)) }));
+    const bad = mk(JSON.stringify({ ...good, items: good.items.map((i) => (i.id === 'sofa' ? { ...i, position: [5.2, 1.9] } : i)) }));
     expect(bad.r).toBe('discarded');
     expect(bad.s.isDefault).toBe(true);
     expect(bad.storage.getItem(LAYOUT_KEY)).toBeNull();
@@ -232,6 +232,6 @@ describe('撤销、保存、恢复默认', () => {
     const s2 = new LayoutStore(b.items, b.rooms, storage);
     expect(s2.loadSaved()).toBe('discarded');
     expect(pos(s2, 'sofa')).toEqual([6.5, 0.52]);
-    expect(pos(s2, 'coffee_table')).toEqual([4.9, 1.95]);
+    expect(pos(s2, 'coffee_table')).toEqual([5.2, 1.95]);
   });
 });
