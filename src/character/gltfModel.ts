@@ -18,6 +18,72 @@ interface RigInfo extends RigLayout {
   elbow?: [number, number, number];
   /** 蒙皮权重里的关节顺序 */
   joints: string[];
+  /** 连衣裙的几个尺寸：有这一项才做「坐下时裙子前片搭在腿上」 */
+  skirt?: SkirtInfo;
+}
+
+interface SkirtInfo {
+  /** 裙摆下沿高度 */
+  hemY: number;
+  /** 胯关节高度 */
+  hipY: number;
+  /** 腿轴线的 z */
+  legZ: number;
+  /** 大腿半径 */
+  legRadius: number;
+}
+
+/**
+ * 坐下时裙子前片搭在腿上（docs/验收问题.md C21）。
+ * 流水线给裙摆的蒙皮是「越靠下越跟大腿、前片最多跟 85%」，裙子又是很蓬的钟形（前沿离身体中线约 19 厘米、大腿只有 7 厘米粗），
+ * 坐下大腿转平以后，前片只转了一部分、又离大腿很远，就像一顶帐篷支在腿上。这里在蒙皮着色器里按坐姿（uDrape，0～1）改两件事：
+ *   - 前片胯以下：权重全部给大腿（完全跟着大腿转平），并把向前鼓出的部分收回到贴着大腿上表面；
+ *   - 前片胯以上：权重收回给身体（不跟着大腿往上翻），鼓出的部分也略微收回，胯部形成一道自然的折。
+ * 站着、走路时 uDrape = 0，模型完全不变。阴影用同一套变形。
+ */
+function skirtDrape(mat: THREE.Material, sk: SkirtInfo, legJoints: [number, number], drape: { value: number }) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, renderer) => {
+    prev.call(mat, shader, renderer);
+    shader.uniforms.uDrape = drape;
+    const f = (v: number) => v.toFixed(4);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uDrape;')
+      .replace(
+        '#include <skinbase_vertex>',
+        `#include <skinbase_vertex>
+vec4 skw = skinWeight;
+float drapeDz = 0.0;
+if (uDrape > 0.001) {
+  vec4 isLeg = vec4(equal(skinIndex, vec4(${legJoints[0].toFixed(1)}))) + vec4(equal(skinIndex, vec4(${legJoints[1].toFixed(1)})));
+  float legW = dot(skw, isLeg);
+  vec3 bp = position;
+  float skirt = step(${f(sk.hemY + 0.003)}, bp.y) * smoothstep(0.05, 0.3, legW);
+  float front = smoothstep(${f(sk.legZ + 0.02)}, ${f(sk.legZ + 0.1)}, bp.z);
+  float k = uDrape * skirt * front;
+  float below = smoothstep(${f(sk.hipY + 0.012)}, ${f(sk.hipY - 0.02)}, bp.y);
+  float legT = mix(legW, below, k);
+  float sL = legW > 1e-4 ? legT / legW : 0.0;
+  float sO = legW < 0.9999 ? (1.0 - legT) / (1.0 - legW) : 0.0;
+  skw = skw * (isLeg * sL + (1.0 - isLeg) * sO);
+  float dz = bp.z - ${f(sk.legZ)};
+  float tLap = ${f(sk.legRadius + 0.006)};
+  float tBel = ${f(sk.legRadius + 0.035)};
+  float dzLap = dz > tLap ? tLap + (dz - tLap) * 0.12 : dz;
+  float dzBel = dz > tBel ? tBel + (dz - tBel) * 0.35 : dz;
+  float bellyK = k * (1.0 - below) * smoothstep(${f(sk.hipY + 0.09)}, ${f(sk.hipY)}, bp.y);
+  drapeDz = mix(mix(dz, dzBel, bellyK), dzLap, k * below) - dz;
+}`,
+      )
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.z += drapeDz;');
+    // 蒙皮（位置、法线）用改过的权重
+    for (const chunk of ['skinning_vertex', 'skinnormal_vertex'] as const) {
+      const src = THREE.ShaderChunk[chunk].replace(/skinWeight/g, 'skw');
+      shader.vertexShader = shader.vertexShader.replace(`#include <${chunk}>`, src);
+    }
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => `${key()}|skirt-drape`;
 }
 
 const glbUrls = import.meta.glob('../../assets/models/*.glb', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
@@ -58,6 +124,7 @@ export function buildGltfCharacter(spec: CharacterSpec): CharacterRig | null {
   const scalerWorld = rig.scaler.matrixWorld;
 
   const lids: Partial<Record<'lid_half' | 'lid_closed', THREE.Mesh>> = {};
+  const drape = { value: 0 };
   const sources: THREE.Mesh[] = [];
   scene.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) sources.push(o as THREE.Mesh);
@@ -95,6 +162,19 @@ export function buildGltfCharacter(spec: CharacterSpec): CharacterRig | null {
       soft(0xffffff, { map, roughnessMap, roughness: roughnessMap ? 1 : ROUGH.cloth, side: THREE.DoubleSide, envMapIntensity: 0.7 }),
     );
     mesh.name = 'body_mesh';
+    if (info.skirt) {
+      const legJoints: [number, number] = [info.joints.indexOf('legL'), info.joints.indexOf('legR')];
+      skirtDrape(mesh.material as THREE.Material, info.skirt, legJoints, drape);
+      // 阴影也用同样的变形，不然影子里还是一顶帐篷
+      const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+      skirtDrape(depth, info.skirt, legJoints, drape);
+      mesh.customDepthMaterial = depth;
+      // 坐姿程度：两条大腿都往前抬时才算（走路时一前一后，取较小的那条，得 0）
+      mesh.onBeforeRender = () => {
+        const fwd = Math.min(-rig.legL.rotation.x, -rig.legR.rotation.x);
+        drape.value = THREE.MathUtils.clamp(fwd / 1.2, 0, 1);
+      };
+    }
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;

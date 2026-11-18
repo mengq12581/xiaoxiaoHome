@@ -38,5 +38,12 @@
     "vertices": 39324,
     "faces": 59918,
     "texture": 2048
+  },
+  "skirt": {
+    "hemY": 0.195,
+    "hipY": 0.25,
+    "legZ": 0.0,
+    "legRadius": 0.07,
+    "_note": "坐下时裙子前片搭在腿上（src/character/gltfModel.ts 的 skirtDrape）：裙摆下沿、胯关节高度、腿轴线 z、大腿半径（参考身高 1.2 米下的米数；来自 tools/character/chars/xiaoxiao.json 与网格实测）"
   }
 }
