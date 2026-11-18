@@ -110,6 +110,84 @@ function legs(b: Builder, w: number, d: number, h: number, inset: number, size: 
 
 type ModelFn = (b: Builder, w: number, d: number, h: number, item: FurnitureItem) => void;
 
+/** 盖着的被子：被头离胯部多远（沿身体朝头的方向，米）、身体隆起的高度 */
+const DUVET = { cuff: 0.39, hump: 0.15 };
+
+/**
+ * 铺开的被子（局部坐标原点 = 胯部在床垫面上的投影，+z 朝床头）：
+ * 高度场网格，床面以内是「被子厚度 + 身体隆起 + 细小褶皱」，出了床沿往下垂；上沿最后 0.1 米是翻出来的被头（浅色、鼓一点、边缘圆下去）。
+ */
+function duvet(w: number, d: number, lx: number, zh: number): THREE.Mesh {
+  const halfW = w / 2 + 0.03; // 比床宽一点，垂下床沿
+  const zFoot = -d / 2 + 0.02 - zh; // 床垫床尾（相对胯部）
+  const z0 = zFoot - 0.05;
+  const z1 = DUVET.cuff;
+  const NX = 34;
+  const NZ = 30;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const cBody = new THREE.Color(C.blanket);
+  const cFold = new THREE.Color(C.blanketFold);
+  const c = new THREE.Color();
+  const smooth = (e0: number, e1: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  for (let j = 0; j <= NZ; j++) {
+    const z = z0 + ((z1 - z0) * j) / NZ;
+    for (let i = 0; i <= NX; i++) {
+      const xl = -halfW + (2 * halfW * i) / NX; // 相对床中线
+      const x = xl - lx; // 相对身体中线
+      // 身体隆起：沿身体方向，脚那头低、胯到胸最高、到被头略收
+      const along = smooth(-0.55, -0.15, z) * (1 - 0.3 * smooth(0.15, z1, z));
+      const across = 0.72 * Math.exp(-((x / 0.24) ** 2)) + 0.28 * Math.exp(-((x / 0.5) ** 2));
+      let y = 0.035 + DUVET.hump * along * across;
+      // 细小褶皱：沿身体方向的几道浅浅的起伏
+      y += 0.006 * Math.sin(x * 23 + z * 4) * smooth(0, 0.3, Math.abs(x));
+      // 两侧、床尾垂下床沿
+      const side = smooth(w / 2 - 0.05, halfW, Math.abs(xl));
+      const foot = 1 - smooth(z0, zFoot + 0.02, z);
+      const drop = Math.max(side, foot);
+      y = y * (1 - drop) - 0.17 * drop;
+      // 被头：最后 0.1 米鼓起来，最边上圆下去
+      const fold = smooth(z1 - 0.12, z1 - 0.09, z);
+      if (fold > 0 && drop < 0.5) {
+        const t = (z - (z1 - 0.1)) / 0.1;
+        y += 0.03 * Math.sin(Math.PI * Math.min(1, Math.max(0, t)) * 0.85) - 0.03 * smooth(0.85, 1, t);
+      }
+      pos.push(x + lx - lx, y, z);
+      c.copy(cBody).lerp(cFold, fold);
+      col.push(c.r, c.g, c.b);
+      uv.push(xl / 0.5, z / 0.5);
+    }
+  }
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const a = j * (NX + 1) + i;
+      const b2 = a + 1;
+      const cc = a + NX + 1;
+      const dd = cc + 1;
+      idx.push(a, cc, b2, b2, cc, dd);
+    }
+  const g = new THREE.BufferGeometry();
+  // 网格 x 是「相对身体中线」：组的原点已经放在身体中线上
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const tex = fabricTexture().clone();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  const m = new THREE.Mesh(g, soft(0xffffff, { map: tex, vertexColors: true, roughness: ROUGH.fabric, side: THREE.DoubleSide }));
+  m.castShadow = true;
+  m.receiveShadow = true;
+  m.name = 'duvet';
+  return m;
+}
+
 const MODELS: Record<string, ModelFn> = {
   sofa(b, w, d, h) {
     const legH = 0.08;
@@ -247,23 +325,30 @@ const MODELS: Record<string, ModelFn> = {
     b.box(w - 0.06, 0.2, d - 0.1, C.sheet, 0, mattressTop - 0.1, -0.03, 'fabric');
     b.box(w + 0.02, 0.95, 0.07, C.wood, 0, 0.475, d / 2 - 0.035, 'wood', 'headboard');
     for (const s of [-1, 1]) b.box(w / 2 - 0.14, 0.11, 0.32, C.pillow, s * (w / 4), mattressTop + 0.055, d / 2 - 0.08 - 0.18, 'fabric', 'pillow');
+    // 平时叠在床尾的被子；睡觉时换成盖在身上的那床（hide: 跟着 prop:blanket_cover 藏起来）
+    const folded = new THREE.Group();
+    folded.name = 'hide:blanket_cover';
+    b.g.add(folded);
+    const fb = new Builder(folded);
     const blanketD = d * 0.62;
-    b.box(w - 0.02, 0.06, blanketD, C.blanket, 0, mattressTop + 0.03, -d / 2 + 0.05 + blanketD / 2, 'fabric', 'blanket');
-    b.box(w - 0.02, 0.066, 0.14, C.blanketFold, 0, mattressTop + 0.033, -d / 2 + 0.05 + blanketD - 0.07, 'fabric');
-    // 盖在身上的被子（睡觉时才鼓起来）：位置跟着「躺」的交互点走，从脚盖到胸口
+    fb.box(w - 0.02, 0.06, blanketD, C.blanket, 0, mattressTop + 0.03, -d / 2 + 0.05 + blanketD / 2, 'fabric', 'blanket');
+    fb.box(w - 0.02, 0.066, 0.14, C.blanketFold, 0, mattressTop + 0.033, -d / 2 + 0.05 + blanketD - 0.07, 'fabric');
+    // 盖在身上的被子（睡觉时出现）：一整床铺开的被子，从床尾盖到下巴，身体那里柔和地拱起，两侧和床尾垂下床沿；
+    // 上沿翻出一道浅色被头。被头下面的身体由 character/blanketClip.ts 裁掉，衣服、手脚不会从被子里穿出来。
     const lie = item.anchors.find((a) => a.id === 'bed_lie');
     if (lie) {
       const cover = new THREE.Group();
       cover.name = 'prop:blanket_cover';
-      // 交互点局部 [右, 前]：前 = 家具正面 = -z
-      cover.position.set(lie.local[0], mattressTop - 0.03, -lie.local[1] - 0.14);
-      // 一团鼓起的被子：压扁的椭球，下半埋在床垫里
-      const bump = new THREE.Mesh(new THREE.SphereGeometry(0.5, 40, 24), mat(C.blanket, 'fabric'));
-      bump.scale.set(0.8, 0.5, 0.92);
-      bump.position.y = 0.06;
-      bump.castShadow = true;
-      bump.receiveShadow = true;
-      cover.add(bump);
+      // 交互点局部 [右, 前]：前 = 家具正面 = -z；组的原点放在胯部（躺下时的身体中心）贴床垫处，出现时从身体往外长
+      const lx = lie.local[0];
+      const zh = -lie.local[1];
+      cover.position.set(lx, mattressTop, zh);
+      cover.add(duvet(w, d, lx, zh));
+      // 被头的位置与朝向（+z 指向头）：裁切面以它为准
+      const cuff = new THREE.Object3D();
+      cuff.name = 'blanket_cuff';
+      cuff.position.set(0, 0, DUVET.cuff - 0.02);
+      cover.add(cuff);
       b.g.add(cover);
     }
   },

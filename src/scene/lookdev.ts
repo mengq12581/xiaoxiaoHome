@@ -31,6 +31,8 @@ export function createRenderer(app: HTMLElement): THREE.WebGLRenderer {
   renderer.toneMappingExposure = LOOK.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // 局部裁切：盖被子时裁掉被子下面的身体（character/blanketClip.ts）
+  renderer.localClippingEnabled = true;
   app.appendChild(renderer.domElement);
   return renderer;
 }

@@ -60,6 +60,13 @@ export class PropManager implements PropSink {
     return this.active.has(name);
   }
 
+  /** 道具当前出现到几成（0～1，渐变中）；没有这个道具返回 0 */
+  amount(name: string): number {
+    let k = 0;
+    for (const e of this.entries) if (e.name === name && e.kind === 'prop') k = Math.max(k, e.k);
+    return k;
+  }
+
   update(dt: number) {
     this.time += dt;
     this.apply(Math.min(1, dt / 0.5));

@@ -26,6 +26,7 @@ import { IdlePool } from './director/idlePool';
 import { isoLocal } from './state/types';
 import { StagePerformer } from './director/stagePerformer';
 import { PropManager, buildHeadphones } from './scene/props';
+import { BlanketClip } from './character/blanketClip';
 import { FrontendLog, StateClient } from './state/client';
 
 const app = document.getElementById('app')!;
@@ -88,6 +89,9 @@ function boot(cfg: AppConfig) {
   // 道具（屏幕微光、翻开的本子、被子、耳机……）
   buildHeadphones(character);
   const props = new PropManager([...furniture.map((f) => f.group), character.root]);
+  // 盖被子时裁掉被子下面的身体（衣服、手脚不穿出被子）
+  const blanketClip = new BlanketClip(character.root);
+  const blanketCuff = scene.getObjectByName('blanket_cuff');
 
   // 导演：状态 → 排队 / 最短停留 → 演员（走过去、就位、动作、道具）
   const directorClock = { t: 0 };
@@ -208,6 +212,8 @@ function boot(cfg: AppConfig) {
       contact.group,
       ...drag.overlayObjects,
       ...world.aoExclude(),
+      // 盖着被子时角色不参与环境光遮蔽：遮蔽的法线通道不认裁切面，被裁掉的裙子会在被子上压出暗影
+      ...(blanketClip.active ? [character.root] : []),
     ],
     [{ name: '关闭湖面倒影', run: () => world.water.setReflection(false) }],
   );
@@ -282,8 +288,9 @@ function boot(cfg: AppConfig) {
         { label: '停下（回空闲池）', run: () => send('idle') },
         { label: '快进 1 分钟', run: () => fastForward(60) },
         { label: '非法活动(fly)', run: () => send('fly') },
-        { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 55, cfg.camera.minDistance) },
-        { label: '镜头看全岛', run: () => rig.setView(rig.view.azimuthDeg, 60, cfg.camera.maxDistance) },
+        // 俯仰角：看她 48°（比原来 55° 抬高一点），看全岛 65°（比原来 60° 放低一点）
+        { label: '镜头看她', run: () => rig.setView(rig.view.azimuthDeg, 48, cfg.camera.minDistance) },
+        { label: '镜头看全岛', run: () => rig.setView(rig.view.azimuthDeg, 65, cfg.camera.maxDistance) },
         { label: '白天', run: () => setTime('day') },
         { label: '黄昏', run: () => setTime('golden') },
         { label: '夜晚', run: () => setTime('night') },
@@ -302,6 +309,7 @@ function boot(cfg: AppConfig) {
     performer.update();
     director.update();
     props.update(dt);
+    blanketClip.update(blanketCuff, props.amount('blanket_cover') > 0.9 && agent.lieWeight > 0.9);
   };
   const renderFrame = (dt: number, realDt: number) => {
     stepWorld(dt, realDt);

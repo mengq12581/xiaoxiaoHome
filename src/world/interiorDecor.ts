@@ -287,21 +287,33 @@ export function buildInteriorDecor(cfg: RoomsConfig, items: FurnitureItem[]): In
     plant([b.x0 + 0.3, b.y0 + 0.3], 0.9);
   }
 
-  // ───────── 挂画（客厅北墙、电视两侧上方） ─────────
+  // ───────── 挂画（客厅北墙）：默认挂在电视两侧；哪一侧会落进门洞（含门框）或出墙，就两幅一起挂到电视正上方 ─────────
   const tv = find('tv_stand');
   if (tv && living) {
     const b = normBounds(living);
     const frameMat = new THREE.MeshStandardMaterial({ color: PALETTE.exterior.timber, roughness: 0.6 });
-    [
-      { dx: -1.35, seed: 1, colors: ['#f2c4a0', '#9fc29a', '#7aa6b3'] },
-      { dx: 1.35, seed: 2, colors: ['#f6dd8c', '#d9a2a0', '#8fae86'] },
-    ].forEach((a) => {
-      const x = tv.position[0] + a.dx;
+    const holes = layout.openings.filter((op) => op.orient === 'h' && Math.abs(op.c - b.y1) < 1e-6);
+    const FRAME_HALF = 0.23;
+    const clear = (x: number) =>
+      x - FRAME_HALF > b.x0 + T / 2 + 0.1 &&
+      x + FRAME_HALF < b.x1 - T / 2 - 0.1 &&
+      holes.every((op) => x + FRAME_HALF + 0.08 < op.s - 0.06 || x - FRAME_HALF - 0.08 > op.e + 0.06);
+    const sides = [-1.35, 1.35].map((dx) => tv.position[0] + dx);
+    // 电视顶约 1.32 米：挂到正上方时画框底边离电视顶 0.24 米
+    const spots: [number, number][] = sides.every(clear) ? sides.map((x) => [x, 1.65]) : [-0.32, 0.32].map((dx) => [tv.position[0] + dx, 1.85]);
+    const arts = [
+      { seed: 1, colors: ['#f2c4a0', '#9fc29a', '#7aa6b3'] },
+      { seed: 2, colors: ['#f6dd8c', '#d9a2a0', '#8fae86'] },
+    ];
+    spots.forEach(([x, y], i) => {
+      const a = arts[i];
       const frame = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.58, 0.03), frameMat);
-      frame.position.copy(P(x, 1.65, b.y1 - T / 2 - 0.02));
+      frame.position.copy(P(x, y, b.y1 - T / 2 - 0.02));
       const art = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.5), new THREE.MeshStandardMaterial({ map: artTexture(a.seed, a.colors), roughness: 0.9 }));
-      art.position.copy(P(x, 1.65, b.y1 - T / 2 - 0.037));
-      group.add(frame, art);
+      art.position.copy(P(x, y, b.y1 - T / 2 - 0.037));
+      // 挂在哪段墙上就归到那段墙的漆层里：墙变透明时画跟着淡出，不会悬在半空
+      const seg = layout.segments.find((sg) => sg.orient === 'h' && Math.abs(sg.c - b.y1) < 1e-6 && x >= sg.a && x <= sg.b);
+      (seg && paintBySegment.get(seg.id) ? paintBySegment.get(seg.id)! : group).add(frame, art);
     });
   }
 
