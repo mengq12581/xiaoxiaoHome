@@ -70,7 +70,8 @@ export function buildWorld(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ro
   const water = buildWater(island);
   const center = P(island.center[0], 0, island.center[1]);
   const sky = buildSky(center);
-  const vegetation = buildVegetation(island, hb);
+  const indoorX1 = Math.max(...rooms.rooms.filter((r) => !r.outdoor).map((r) => Math.max(r.bounds[0][0], r.bounds[1][0])));
+  const vegetation = buildVegetation(island, hb, indoorX1);
   const exterior = buildExterior(rooms);
   const decor = buildInteriorDecor(rooms, items);
   scene.add(island.mesh, water.mesh, sky.group, vegetation.group, exterior.group, decor.group);
@@ -154,6 +155,16 @@ export function buildWorld(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ro
   const paintFade = new Map<string, FadeFn>();
   for (const [id, g] of decor.paintBySegment) paintFade.set(id, makeFadeable(g));
 
+  // 透明度裁切的叶片 / 花卡片：环境光遮蔽的法线 / 深度通道不认裁切，会把整张卡片当成实心方块，
+  // 在后面的墙上压出一块块亮斑，所以不参与环境光遮蔽
+  const alphaCut: THREE.Object3D[] = [];
+  for (const root of [vegetation.group, exterior.group]) {
+    root.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if ((o as THREE.Mesh).isMesh && m && !Array.isArray(m) && m.alphaTest > 0) alphaCut.push(o);
+    });
+  }
+
   let roofOpen = 0;
   let roofGoal = 0;
   exterior.setOpen(0);
@@ -211,7 +222,7 @@ export function buildWorld(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ro
       for (const [id, f] of cladFade) f(THREE.MathUtils.clamp((wallOpacity(id) - fadeOpacity) / span, 0, 1));
       for (const [id, f] of paintFade) f(THREE.MathUtils.clamp((wallOpacity(id) - fadeOpacity) / span, 0, 1));
     },
-    aoExclude: () => [water.mesh, sky.group],
+    aoExclude: () => [water.mesh, sky.group, ...alphaCut],
     setSize(w, h) {
       water.setSize(w, h);
     },

@@ -33,6 +33,8 @@ export interface Island {
   shore(p: Vec2): number;
   /** 离小路中线的距离 */
   pathDist(p: Vec2): number;
+  /** 小路中线（从入户门到码头） */
+  pathPoints: Vec2[];
   /** 是否在房子（含外扩一圈）范围内 */
   nearHouse(p: Vec2, margin: number): boolean;
   /** 码头起点（岸边）与方向 */
@@ -208,5 +210,5 @@ export function buildIsland(spec: IslandSpec): Island {
   depthTexture.minFilter = THREE.LinearFilter;
   depthTexture.needsUpdate = true;
 
-  return { mesh, height, shore, pathDist, nearHouse, pier: { start: pierStart, dir }, extent, depthTexture, center };
+  return { mesh, height, shore, pathDist, pathPoints: pathPts, nearHouse, pier: { start: pierStart, dir }, extent, depthTexture, center };
 }

@@ -149,60 +149,9 @@ export function plasterMaps(): MaterialMaps {
   return pair('plaster', 256, (u, v) => {
     const big = fbmTile(n, u, v, 3, 3);
     const fine = fbmTile(n, u + 0.5, v, 24, 3);
-    const g = clamp255((0.93 + 0.08 * (big - 0.5) + 0.04 * (fine - 0.5)) * 255);
+    const g = clamp255((0.96 + 0.05 * (big - 0.5) + 0.025 * (fine - 0.5)) * 255);
     return { h: fine, rgb: [g, g, g] };
-  }, 1.2);
-}
-
-/** 石材墙基：错缝砌块，块与块之间有灰缝 */
-export function stoneMaps(): MaterialMaps {
-  const n = tileNoise(31);
-  const r = rng(5);
-  const tint = Array.from({ length: 64 }, () => 0.86 + r() * 0.2);
-  return pair('stone', 256, (u, v) => {
-    const rows = 4;
-    const row = Math.floor(v * rows);
-    const off = row % 2 ? 0.25 : 0;
-    const cols = 2;
-    const cu = (u + off) * cols;
-    const col = Math.floor(cu);
-    const fu = cu - col;
-    const fv = v * rows - row;
-    const edge = Math.min(fu, 1 - fu, fv * 2, (1 - fv) * 2);
-    const mortar = edge < 0.035 ? 1 - edge / 0.035 : 0;
-    const t = tint[(row * 7 + (((col % cols) + cols) % cols) * 13) % 64];
-    const grain = fbmTile(n, u, v, 16, 3);
-    const k = t * (0.88 + 0.24 * grain) * (1 - 0.35 * mortar);
-    const g = clamp255(k * 255);
-    return { h: (1 - mortar) * 0.8 + grain * 0.2, rgb: [g, g, g] };
-  }, 3);
-}
-
-/** 屋瓦：一行行鱼鳞瓦，带高度起伏（颜色乘在屋瓦底色上） */
-export function roofTileMaps(): MaterialMaps {
-  const n = tileNoise(41);
-  const r = rng(9);
-  const tint = Array.from({ length: 64 }, () => 0.85 + r() * 0.25);
-  return pair('roof', 256, (u, v) => {
-    const rows = 4;
-    const cols = 6;
-    const row = Math.floor(v * rows);
-    const fv = v * rows - row;
-    const off = row % 2 ? 0.5 / cols : 0;
-    const cu = ((u + off) * cols) % cols;
-    const col = Math.floor(cu);
-    const fu = cu - col;
-    // 每片瓦的下沿是一道弧，越靠下越鼓起
-    const arc = 0.18 * (1 - Math.pow(2 * fu - 1, 2));
-    const shape = Math.max(0, Math.min(1, (1 - fv - arc) / 0.9));
-    const lip = shape < 0.08 ? shape / 0.08 : 1;
-    const ht = (0.25 + 0.75 * (1 - shape)) * lip;
-    const t = tint[(row * 11 + col * 5) % 64];
-    const grain = fbmTile(n, u, v, 32, 2);
-    const k = t * (0.72 + 0.28 * ht) * (0.92 + 0.12 * grain) * (lip < 1 ? 0.6 : 1);
-    const g = clamp255(k * 255);
-    return { h: ht, rgb: [g, g, g] };
-  }, 4);
+  }, 1.0);
 }
 
 /** 木纹（颜色为乘数）：顺着 u 方向的细长纹理 */
@@ -389,6 +338,303 @@ export function grassCard(): THREE.Texture {
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    return t;
+  });
+}
+
+/** 立边咬合金属屋面：一张贴图 = 一块板（u 方向两侧是凸起的咬合边），v 方向有很淡的竖向流痕 */
+export function metalSeamMaps(): MaterialMaps {
+  const n = tileNoise(91);
+  return pair('metal-seam', 256, (u, v) => {
+    const d = Math.min(u, 1 - u);
+    const seam = d < 0.035 ? 1 - d / 0.035 : 0;
+    const streak = fbmTile(n, u * 0.25, v, 8, 2);
+    const k = (0.9 + 0.1 * streak) * (seam > 0 ? 1.12 - 0.25 * (1 - seam) : 1);
+    const g = clamp255(k * 230);
+    return { h: seam * 0.9 + streak * 0.05, rgb: [g, g, g] };
+  }, 6);
+}
+
+/** 画一朵五瓣花（樱花 / 白花）：petal 花瓣色，heart 花心色 */
+function drawBlossom(g: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number, petal: string, heart: string, edge: string) {
+  for (let i = 0; i < 5; i++) {
+    const a = rot + (i / 5) * Math.PI * 2;
+    g.save();
+    g.translate(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5);
+    g.rotate(a + Math.PI / 2);
+    const grad = g.createRadialGradient(0, r * 0.25, 0, 0, 0, r * 0.62);
+    grad.addColorStop(0, heart);
+    grad.addColorStop(0.45, petal);
+    grad.addColorStop(1, edge);
+    g.fillStyle = grad;
+    g.beginPath();
+    g.ellipse(0, 0, r * 0.36, r * 0.55, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+  g.fillStyle = heart;
+  g.beginPath();
+  g.arc(x, y, r * 0.16, 0, Math.PI * 2);
+  g.fill();
+}
+
+/**
+ * 花枝卡片：一小段深色细枝上挤满五瓣花（樱花用粉白，小花树用白）；带少量嫩叶。
+ * tone：'sakura' | 'white'
+ */
+export function blossomCard(tone: 'sakura' | 'white', seed: number): THREE.Texture {
+  return cached(`blossom:${tone}:${seed}`, () => {
+    const size = 256;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d')!;
+    const r = rng(seed);
+    const col =
+      tone === 'sakura'
+        ? { petal: 'rgb(250,226,232)', edge: 'rgb(244,196,210)', heart: 'rgb(214,120,150)' }
+        : { petal: 'rgb(252,250,244)', edge: 'rgb(236,234,226)', heart: 'rgb(226,200,120)' };
+    // 细枝
+    g.strokeStyle = 'rgb(70,52,46)';
+    g.lineCap = 'round';
+    const twigs: [number, number, number, number][] = [];
+    for (let t = 0; t < 3; t++) {
+      const x0 = size * (0.35 + r() * 0.3);
+      const a = -Math.PI / 2 + (r() - 0.5) * 1.2;
+      const len = size * (0.55 + r() * 0.35);
+      g.lineWidth = 3 - t * 0.6;
+      g.beginPath();
+      g.moveTo(x0, size);
+      g.lineTo(x0 + Math.cos(a) * len, size + Math.sin(a) * len);
+      g.stroke();
+      twigs.push([x0, size, a, len]);
+    }
+    // 嫩叶（少）
+    for (let i = 0; i < 5; i++) {
+      const [x0, y0, a, len] = twigs[i % twigs.length];
+      const s = 0.3 + r() * 0.6;
+      g.save();
+      g.translate(x0 + Math.cos(a) * len * s, y0 + Math.sin(a) * len * s);
+      g.rotate(a + (r() - 0.5) * 2);
+      g.fillStyle = tone === 'sakura' ? 'rgb(150,140,90)' : 'rgb(120,150,80)';
+      g.beginPath();
+      g.ellipse(10, 0, 12, 5, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    // 花：沿枝成簇
+    for (let i = 0; i < 26; i++) {
+      const [x0, y0, a, len] = twigs[i % twigs.length];
+      const s = 0.25 + r() * 0.75;
+      const x = x0 + Math.cos(a) * len * s + (r() - 0.5) * 34;
+      const y = y0 + Math.sin(a) * len * s + (r() - 0.5) * 34;
+      drawBlossom(g, x, y, 15 + r() * 9, r() * 6.28, col.petal, col.heart, col.edge);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  });
+}
+
+/** 绣球花头：满铺四瓣小花（白～浅蓝～蓝紫由实例颜色决定，这里是白底带阴影） */
+export function hydrangeaMaps(): MaterialMaps {
+  const k = 'hydrangea';
+  if (cache.has(k)) return { map: cache.get(k)!, normalMap: cache.get(`${k}:n`)! };
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgb(205,205,210)';
+  g.fillRect(0, 0, size, size);
+  const hc = document.createElement('canvas');
+  hc.width = hc.height = size;
+  const hg = hc.getContext('2d')!;
+  hg.fillStyle = '#000';
+  hg.fillRect(0, 0, size, size);
+  const r = rng(31);
+  for (let i = 0; i < 260; i++) {
+    const x = r() * size;
+    const y = r() * size;
+    const rad = 7 + r() * 5;
+    const rot = r() * 6.28;
+    const shade = 0.8 + r() * 0.2;
+    for (const [dx, dy] of [[0, 0], [size, 0], [-size, 0], [0, size], [0, -size]]) {
+      for (let p = 0; p < 4; p++) {
+        const a = rot + (p / 4) * Math.PI * 2;
+        const px = x + dx + Math.cos(a) * rad * 0.5;
+        const py = y + dy + Math.sin(a) * rad * 0.5;
+        g.fillStyle = `rgb(${clamp255(255 * shade)},${clamp255(255 * shade)},${clamp255(252 * shade)})`;
+        g.beginPath();
+        g.ellipse(px, py, rad * 0.45, rad * 0.38, a, 0, Math.PI * 2);
+        g.fill();
+        hg.fillStyle = '#fff';
+        hg.beginPath();
+        hg.ellipse(px, py, rad * 0.45, rad * 0.38, a, 0, Math.PI * 2);
+        hg.fill();
+      }
+    }
+  }
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  const img = hg.getImageData(0, 0, size, size).data;
+  const h = new Float32Array(size * size);
+  for (let i = 0; i < h.length; i++) h[i] = img[i * 4] / 255;
+  const normalMap = normalFromHeight(h, size, 2.5);
+  cache.set(k, map);
+  cache.set(`${k}:n`, normalMap);
+  return { map, normalMap };
+}
+
+/** 宽叶卡片（绣球的叶子）：几片对生的卵形大叶，叶脉明显 */
+export function broadLeafCard(): THREE.Texture {
+  return cached('broad-leaf', () => {
+    const size = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d')!;
+    const r = rng(41);
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + (i - 2) * 0.55 + (r() - 0.5) * 0.2;
+      const len = size * (0.36 + r() * 0.1);
+      g.save();
+      g.translate(size / 2, size * 0.95);
+      g.rotate(a + Math.PI / 2);
+      const k = 0.8 + r() * 0.3;
+      g.fillStyle = `rgb(${clamp255(70 * k)},${clamp255(110 * k)},${clamp255(56 * k)})`;
+      g.beginPath();
+      g.ellipse(0, -len * 0.55, len * 0.32, len * 0.55, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(190,220,160,0.35)';
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(0, -len * 1.05);
+      g.stroke();
+      g.restore();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  });
+}
+
+/** 雏菊卡片：一小丛白色小雏菊（黄心），平铺在地上用 */
+export function daisyCard(): THREE.Texture {
+  return cached('daisy', () => {
+    const size = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d')!;
+    const r = rng(53);
+    // 底下几片细叶
+    for (let i = 0; i < 10; i++) {
+      g.save();
+      g.translate(size / 2 + (r() - 0.5) * 50, size / 2 + (r() - 0.5) * 50);
+      g.rotate(r() * 6.28);
+      g.fillStyle = `rgb(${70 + r() * 20},${105 + r() * 20},${55})`;
+      g.beginPath();
+      g.ellipse(0, 0, 14, 4, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    for (let i = 0; i < 7; i++) {
+      const x = size / 2 + (r() - 0.5) * 80;
+      const y = size / 2 + (r() - 0.5) * 80;
+      const rad = 9 + r() * 5;
+      for (let p = 0; p < 14; p++) {
+        const a = (p / 14) * Math.PI * 2;
+        g.save();
+        g.translate(x + Math.cos(a) * rad * 0.55, y + Math.sin(a) * rad * 0.55);
+        g.rotate(a);
+        g.fillStyle = p % 2 ? 'rgb(250,250,246)' : 'rgb(238,238,232)';
+        g.beginPath();
+        g.ellipse(0, 0, rad * 0.5, rad * 0.13, 0, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+      g.fillStyle = 'rgb(232,190,60)';
+      g.beginPath();
+      g.arc(x, y, rad * 0.24, 0, Math.PI * 2);
+      g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  });
+}
+
+/** 芦苇草（蒲苇）花穗卡片：一根细茎顶着蓬松的羽毛状花穗 */
+export function plumeCard(): THREE.Texture {
+  return cached('plume', () => {
+    const W = 64;
+    const H = 256;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d')!;
+    const r = rng(67);
+    g.strokeStyle = 'rgb(150,140,110)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(W / 2, H);
+    g.lineTo(W / 2, H * 0.35);
+    g.stroke();
+    // 花穗：上窄下宽的一团细丝
+    for (let i = 0; i < 900; i++) {
+      const t = r();
+      const y = H * (0.02 + t * 0.42);
+      const spread = Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.9) * W * 0.36;
+      const x = W / 2 + (r() - 0.5) * 2 * spread;
+      const len = 6 + r() * 10;
+      const k = 0.85 + r() * 0.15;
+      g.strokeStyle = `rgba(${clamp255(246 * k)},${clamp255(236 * k)},${clamp255(222 * k)},0.7)`;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (x - W / 2) * 0.15, y + len);
+      g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  });
+}
+
+/** 竹叶卡片：一小枝上几片细长披针形竹叶 */
+export function bambooLeafCard(): THREE.Texture {
+  return cached('bamboo-leaf', () => {
+    const size = 128;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d')!;
+    const r = rng(71);
+    g.strokeStyle = 'rgb(110,120,70)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(size * 0.1, size * 0.9);
+    g.lineTo(size * 0.85, size * 0.2);
+    g.stroke();
+    for (let i = 0; i < 9; i++) {
+      const s = 0.15 + (i / 9) * 0.8;
+      const x = size * (0.1 + 0.75 * s);
+      const y = size * (0.9 - 0.7 * s);
+      const a = (i % 2 ? 1 : -1) * (0.6 + r() * 0.5) - 0.8;
+      const len = 26 + r() * 16;
+      const k = 0.8 + r() * 0.35;
+      g.save();
+      g.translate(x, y);
+      g.rotate(a);
+      g.fillStyle = `rgb(${clamp255(92 * k)},${clamp255(128 * k)},${clamp255(60 * k)})`;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.quadraticCurveTo(len * 0.5, -len * 0.12, len, 0);
+      g.quadraticCurveTo(len * 0.5, len * 0.12, 0, 0);
+      g.fill();
+      g.restore();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
     return t;
   });
 }

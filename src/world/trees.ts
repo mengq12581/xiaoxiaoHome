@@ -1,6 +1,7 @@
 // 写实的树：枝干分级生长 + 叶片卡片（生成器见 vendor/ashTree.js，MIT）。
-//   - 三个生长种子做三种树形，每种用实例化绘制（同一棵树形、不同大小朝向颜色）；
-//   - 叶片卡片上画的是一小簇羽状复叶（textures.ts 的 leafCard），透明度裁切，双面、法线保持「整团朝外」；
+//   - 三个树种：绿叶大树（白蜡树形）、樱花（矮干、横向铺开的树冠、满树粉白花枝）、开白花的小树；
+//     每种两三个生长种子做不同树形，用实例化绘制（同一棵树形、不同大小朝向颜色）；
+//   - 叶片 / 花枝卡片（textures.ts 的 leafCard / blossomCard），透明度裁切，双面、法线保持「整团朝外」；
 //   - 风：顶点着色器里按高度轻轻摆动，叶片再多一层细碎抖动；
 //   - 遮挡淡出：每棵树一个「树冠球」，从相机到要保持可见的点（她、各房间）的视线穿过树冠球，
 //     这棵树就渐变成稀疏的网点（屏幕抖动裁切，不走半透明排序，影子照旧）。
@@ -12,21 +13,18 @@ import { compileAshTree } from './vendor/ashTree.js';
 import { ashMedium } from './vendor/ashPreset.js';
 import type { AshPreset } from './vendor/ashTree';
 import { rng } from './noise';
-import { barkMaps, leafCard } from './textures';
-
-/** 生成器的单位换算到米（中等白蜡树约 85 单位高） */
-const UNIT = 0.075;
+import { barkMaps, blossomCard, leafCard } from './textures';
 /** 被判定为遮挡时的「覆盖率」（1 = 实心，0 = 全透） */
 export const TREE_FADE_MIN = 0.18;
 const FADE_SPEED = 4;
 
-export type TreeKind = 'green' | 'blossom';
+export type TreeKind = 'green' | 'sakura' | 'sapling';
 export interface TreeSpot {
   p: Vec2;
-  /** 相对中等树的大小（1 ≈ 6.4 米高） */
+  /** 相对该树种标准大小的比例（绿叶树 1 ≈ 6.4 米高；樱花 1 ≈ 3.6 米高、4.7 米宽；小花树 1 ≈ 2.4 米高） */
   scale: number;
   kind: TreeKind;
-  /** 0 / 1 / 2：三种树形 */
+  /** 树形编号（按树种的种子数取模） */
   variant: number;
   /** 地面高度（世界 y） */
   ground: number;
@@ -40,17 +38,63 @@ export interface Trees {
   readonly occluding: number;
 }
 
-const SEEDS = [36330, 101, 202];
+const clone = (p: AshPreset) => JSON.parse(JSON.stringify(p)) as AshPreset;
 
-function preset(seed: number): AshPreset {
-  const p = JSON.parse(JSON.stringify(ashMedium)) as AshPreset;
+/** 绿叶大树（白蜡树形）。预算（GTX 1650）：每棵约 1 万三角面——枝干截面与分段数降一档，叶片卡片少而大 */
+function greenPreset(seed: number): AshPreset {
+  const p = clone(ashMedium);
   p.seed = seed;
-  // 预算（GTX 1650）：每棵约 1 万三角面——枝干截面与分段数降一档，叶片卡片少而大
   p.branch.segments = [8, 5, 3, 3];
   p.branch.sections = [10, 6, 4, 3];
   p.leaves.count = 7;
   p.leaves.size = 5;
   return p;
+}
+
+/** 樱花：主干矮而粗，分枝角度大、向四周铺开，枝条更扭；花枝卡片多而密 */
+function sakuraPreset(seed: number): AshPreset {
+  const p = clone(ashMedium);
+  p.seed = seed;
+  Object.assign(p.branch, {
+    angle: [0, 58, 50, 40],
+    children: [5, 4, 4, 0],
+    length: [20, 26, 12, 5],
+    radius: [2.6, 0.62, 0.7, 0.7],
+    start: [0, 0.45, 0.25, 0],
+    gnarliness: [0.08, 0.28, 0.25, 0.12],
+    forceStrength: 0.004,
+    segments: [8, 5, 3, 3],
+    sections: [8, 6, 4, 3],
+  });
+  p.leaves = { angle: 45, count: 9, start: 0.2, size: 4.2, sizeVariance: 0.5, alphaTest: 0.5 };
+  return p;
+}
+
+/** 开白花的小树：细干、稀疏的枝，花开得零零散散 */
+function saplingPreset(seed: number): AshPreset {
+  const p = sakuraPreset(seed);
+  p.branchLevels = 2;
+  Object.assign(p.branch, {
+    angle: [0, 35, 40, 40],
+    children: [6, 4, 0, 0],
+    length: [30, 18, 9, 4],
+    radius: [1.2, 0.55, 0.7, 0.7],
+    start: [0, 0.35, 0.3, 0],
+    gnarliness: [0.06, 0.2, 0.2, 0.1],
+    forceStrength: 0.01,
+  });
+  p.leaves = { angle: 40, count: 6, start: 0.3, size: 4.5, sizeVariance: 0.5, alphaTest: 0.5 };
+  return p;
+}
+
+interface Species {
+  presets: AshPreset[];
+  /** 生成器单位 → 米 */
+  unit: number;
+  bark: string;
+  leaf: THREE.Texture;
+  /** 每棵树的叶 / 花色（乘在贴图上） */
+  tint(r: () => number, c: THREE.Color): THREE.Color;
 }
 
 /** 给材质加上：风、逐实例的网点淡出。叶片额外保持法线不随背面翻转（整团朝外，背光面不发黑） */
@@ -104,22 +148,47 @@ export function buildTrees(spots: TreeSpot[], seed = 7): Trees {
   const r = rng(seed);
   const time = { value: 0 };
 
+  const species: Record<TreeKind, Species> = {
+    green: {
+      presets: [36330, 101, 202].map(greenPreset),
+      unit: 0.075,
+      bark: '#c9b8a6',
+      leaf: leafCard('green', [112, 150, 70], 3).map,
+      tint: (r, c) => c.setHSL(0.1 + (r() - 0.5) * 0.05, 0.12 + r() * 0.15, 0.78 + r() * 0.16),
+    },
+    sakura: {
+      presets: [11, 23].map(sakuraPreset),
+      unit: 0.06,
+      bark: '#6f5f58',
+      leaf: blossomCard('sakura', 5),
+      tint: (r, c) => c.setHSL(0.96, 0.25 + r() * 0.3, 0.86 + r() * 0.1),
+    },
+    sapling: {
+      presets: [7, 19].map(saplingPreset),
+      unit: 0.06,
+      bark: '#7a6a5e',
+      leaf: blossomCard('white', 9),
+      tint: (r, c) => c.setHSL(0.08, 0.1 + r() * 0.2, 0.92 + r() * 0.06),
+    },
+  };
   const bark = barkMaps();
-  const barkMat = new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.92, color: '#c9b8a6' });
-  decorate(barkMat, time, false);
-  const leafMats: Record<TreeKind, THREE.MeshStandardMaterial> = {
-    green: new THREE.MeshStandardMaterial({ map: leafCard('green', [112, 150, 70], 3).map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.78 }),
-    blossom: new THREE.MeshStandardMaterial({ map: leafCard('blossom', [238, 186, 196], 5).map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 }),
+  const leafMats = {} as Record<TreeKind, THREE.MeshStandardMaterial>;
+  const barkMats = {} as Record<TreeKind, THREE.MeshStandardMaterial>;
+  const depthMats = {} as Record<TreeKind, THREE.MeshDepthMaterial>;
+  for (const k of Object.keys(species) as TreeKind[]) {
+    const sp = species[k];
+    barkMats[k] = new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.92, color: sp.bark });
+    decorate(barkMats[k], time, false);
+    leafMats[k] = new THREE.MeshStandardMaterial({ map: sp.leaf, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.78 });
+    decorate(leafMats[k], time, true);
+    // 投影也要按叶片形状裁切，不然影子是一片片方块
+    depthMats[k] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: sp.leaf, alphaTest: 0.5, side: THREE.DoubleSide });
+  }
+  const compiled = new Map<AshPreset, ReturnType<typeof compileAshTree>>();
+  const compile = (p: AshPreset) => {
+    if (!compiled.has(p)) compiled.set(p, compileAshTree(p));
+    return compiled.get(p)!;
   };
-  decorate(leafMats.green, time, true);
-  decorate(leafMats.blossom, time, true);
-  // 投影也要按叶片形状裁切，不然影子是一片片方块
-  const depthMats: Record<TreeKind, THREE.MeshDepthMaterial> = {
-    green: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafMats.green.map, alphaTest: 0.5, side: THREE.DoubleSide }),
-    blossom: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafMats.blossom.map, alphaTest: 0.5, side: THREE.DoubleSide }),
-  };
-
-  const compiled = SEEDS.map((s) => compileAshTree(preset(s)));
 
   // 遮挡判定用的树冠球
   interface Crown {
@@ -135,17 +204,19 @@ export function buildTrees(spots: TreeSpot[], seed = 7): Trees {
   const q = new THREE.Quaternion();
   const col = new THREE.Color();
   const up = new THREE.Vector3(0, 1, 0);
-  for (let v = 0; v < SEEDS.length; v++) {
-    for (const kind of ['green', 'blossom'] as const) {
-      const list = spots.filter((s) => s.variant === v && s.kind === kind);
+  for (const kind of Object.keys(species) as TreeKind[]) {
+    const sp = species[kind];
+    for (let v = 0; v < sp.presets.length; v++) {
+      const list = spots.filter((s) => s.kind === kind && s.variant % sp.presets.length === v);
       if (!list.length) continue;
-      const branchGeo = compiled[v].branchGeometry.clone();
-      const leafGeo = compiled[v].leafGeometry.clone();
+      const tree = compile(sp.presets[v]);
+      const branchGeo = tree.branchGeometry.clone();
+      const leafGeo = tree.leafGeometry.clone();
       const fade = new THREE.InstancedBufferAttribute(new Float32Array(list.length).fill(1), 1);
       fade.setUsage(THREE.DynamicDrawUsage);
       branchGeo.setAttribute('aFade', fade);
       leafGeo.setAttribute('aFade', fade);
-      const branches = new THREE.InstancedMesh(branchGeo, barkMat, list.length);
+      const branches = new THREE.InstancedMesh(branchGeo, barkMats[kind], list.length);
       const leaves = new THREE.InstancedMesh(leafGeo, leafMats[kind], list.length);
       leaves.customDepthMaterial = depthMats[kind];
       leafGeo.computeBoundingBox();
@@ -153,16 +224,14 @@ export function buildTrees(spots: TreeSpot[], seed = 7): Trees {
       const cMid = box.getCenter(new THREE.Vector3());
       const cR = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.42;
       list.forEach((t, i) => {
-        const s = UNIT * t.scale;
+        const s = sp.unit * t.scale;
         q.setFromAxisAngle(up, r() * Math.PI * 2);
         const base = P(t.p[0], t.ground - 0.08, t.p[1]);
         m4.compose(base, q, new THREE.Vector3(s, s * (0.94 + r() * 0.12), s));
         branches.setMatrixAt(i, m4);
         leaves.setMatrixAt(i, m4);
-        // 每棵树叶色略有差异：花树粉得深浅不一，绿树有的偏黄有的偏蓝
-        if (kind === 'green') col.setHSL(0.1 + (r() - 0.5) * 0.05, 0.12 + r() * 0.15, 0.78 + r() * 0.16);
-        else col.setHSL(0.97, 0.05 + r() * 0.1, 0.9 + r() * 0.08);
-        leaves.setColorAt(i, col);
+        // 每棵树叶色 / 花色略有差异
+        leaves.setColorAt(i, sp.tint(r, col));
         crowns.push({
           center: base.clone().add(new THREE.Vector3(0, cMid.y * s, 0)),
           radius: cR * s,

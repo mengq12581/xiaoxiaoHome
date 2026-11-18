@@ -6,7 +6,6 @@
 // 同类物件都用实例化绘制。
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Vec2 } from '../config/types';
 import { P } from '../scene/house';
 import type { Island } from './island';
@@ -15,6 +14,8 @@ import { fbm, rng } from './noise';
 import { PALETTE } from './palette';
 import { grassCard, leafCard, rockMaps, woodMaps } from './textures';
 import { buildTrees, type TreeSpot, type Trees } from './trees';
+import { bushGeometry, foliageMaterial, tuftGeometry } from './foliage';
+import { buildGarden } from './garden';
 
 export interface Practical {
   /** 世界坐标 */
@@ -35,73 +36,6 @@ export interface Vegetation {
   update(dt: number, camera: THREE.Camera, targets: THREE.Vector3[]): void;
 }
 
-/** 叶片 / 草叶材质：双面，背面不翻法线（整团朝外），可选随风摆 */
-function foliageMaterial(map: THREE.Texture, time: { value: number } | null, sway = 0): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
-  m.onBeforeCompile = (s) => {
-    s.fragmentShader = s.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
-    if (!time) return;
-    s.uniforms.uTime = time;
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-{
-  vec2 ip = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
-  float h = max(position.y, 0.0);
-  float w = sin(uTime * 1.6 + ip.x * 0.8 + ip.y * 0.5) + 0.4 * sin(uTime * 3.1 + ip.x * 2.3);
-  transformed.x += w * h * h * ${sway.toFixed(3)};
-  transformed.z += w * h * h * ${(sway * 0.6).toFixed(3)};
-}`,
-    );
-  };
-  m.customProgramCacheKey = () => `foliage-${time ? sway : 'static'}`;
-  return m;
-}
-
-/** 一团灌木：n 张卡片分布在椭球面上，法线 = 从中心指向外 */
-function bushGeometry(seed: number, n: number): THREE.BufferGeometry {
-  const r = rng(seed);
-  const parts: THREE.BufferGeometry[] = [];
-  const v = new THREE.Vector3();
-  for (let i = 0; i < n; i++) {
-    const g = new THREE.PlaneGeometry(0.42, 0.42);
-    const u = r() * 2 - 1;
-    const a = r() * Math.PI * 2;
-    const rad = Math.sqrt(1 - u * u);
-    v.set(Math.cos(a) * rad, Math.abs(u) * 0.85 + 0.05, Math.sin(a) * rad).multiplyScalar(0.32 + r() * 0.2);
-    g.rotateX((r() - 0.5) * 2.4);
-    g.rotateY(r() * Math.PI * 2);
-    g.translate(v.x, v.y, v.z);
-    const pos = g.getAttribute('position');
-    const nor = g.getAttribute('normal');
-    const c = new THREE.Vector3(0, 0.12, 0);
-    for (let k = 0; k < pos.count; k++) {
-      v.fromBufferAttribute(pos, k).sub(c).normalize();
-      nor.setXYZ(k, v.x, v.y, v.z);
-    }
-    parts.push(g);
-  }
-  return mergeGeometries(parts)!;
-}
-
-/** 十字交叉的草丛卡片（底边在原点） */
-function tuftGeometry(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) {
-    const g = new THREE.PlaneGeometry(0.5, 0.36);
-    g.translate(0, 0.18, 0);
-    g.rotateY((i / 3) * Math.PI);
-    // 法线朝上偏一点：草丛整体像一块受光的草地，而不是一张张竖着的纸
-    const nor = g.getAttribute('normal');
-    for (let k = 0; k < nor.count; k++) {
-      const n = new THREE.Vector3().fromBufferAttribute(nor, k).multiplyScalar(0.35).add(new THREE.Vector3(0, 1, 0)).normalize();
-      nor.setXYZ(k, n.x, n.y, n.z);
-    }
-    parts.push(g);
-  }
-  return mergeGeometries(parts)!;
-}
-
 /** 石头：多面体 + 噪声起伏 */
 function rockGeometry(seed: number): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(0.5, 3);
@@ -118,7 +52,7 @@ function rockGeometry(seed: number): THREE.BufferGeometry {
   return g;
 }
 
-export function buildVegetation(island: Island, house: { x0: number; y0: number; x1: number; y1: number }): Vegetation {
+export function buildVegetation(island: Island, house: { x0: number; y0: number; x1: number; y1: number }, indoorX1 = house.x1): Vegetation {
   const group = new THREE.Group();
   group.name = 'vegetation';
   const r = rng(2026);
@@ -139,14 +73,21 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   };
 
   // ───────── 树 ─────────
-  // 树挡住视线时会自己变透明，所以可以种得离房子近一些、也可以种在南面；树冠半径约 2.4 米，离墙至少 2.8 米免得插进屋顶
+  // 树挡住视线时会自己变透明，所以可以种得离房子近一些、也可以种在南面；树冠不能插进屋檐（离墙至少 2.6～3 米）
   const spots: TreeSpot[] = [];
-  const add = (p: Vec2, scale: number, kind: TreeSpot['kind']) => spots.push({ p, scale, kind, variant: spots.length % 3, ground: ground(p) });
+  const add = (p: Vec2, scale: number, kind: TreeSpot['kind']) => spots.push({ p, scale, kind, variant: spots.length, ground: ground(p) });
+  // 樱花（参考图：门边一棵铺开的大樱花，南墙前一棵小的）与开白花的小树
+  add([house.x0 - 2.7, house.y0 - 2.3], 1.0, 'sakura');
+  add([indoorX1 - 2.6, house.y0 - 3.3], 0.72, 'sakura');
+  add([house.x0 - 3.0, house.y1 + 0.2], 0.8, 'sakura');
+  add([house.x0 + 3.0, house.y0 - 2.4], 0.62, 'sapling');
+  add([house.x1 + 1.3, house.y0 - 1.6], 0.55, 'sapling');
+  add([house.x0 - 2.5, house.y0 + 2.0], 0.5, 'sapling');
   add([house.x0 + 1.2, house.y1 + 4.6], 1.2, 'green'); // 屋后土坡上一棵大树，打破地平线
-  add([house.x1 - 1.8, house.y1 + 3.3], 0.78, 'blossom'); // 书房窗外一棵花树
   const placed: Vec2[] = spots.map((s) => s.p);
-  for (const p of scatter(6, (p) => ok(p, 2.0, 3.0, 1.6), 4.6, 6000, placed)) {
-    add(p, 0.7 + r() * 0.35, r() < 0.15 ? 'blossom' : 'green');
+  // 绿叶大树只种在房子北面和东西两侧靠后，把南面、门前留给樱花和花草
+  for (const p of scatter(5, (p) => ok(p, 2.0, 3.0, 1.6) && p[1] > house.y0 + 2.5, 4.6, 6000, placed)) {
+    add(p, 0.7 + r() * 0.35, 'green');
     placed.push(p);
   }
   const trees = buildTrees(spots);
@@ -157,12 +98,9 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   const bushGeos = [bushGeometry(1, 34), bushGeometry(2, 30)];
   const bushSpots: Vec2[] = [];
   const doorGap = (p: Vec2) => island.pathDist(p) > 1.0;
-  for (let x = house.x0 + 0.6; x < 8.6; x += 1.7 + r() * 0.9) {
-    bushSpots.push([x, house.y0 - 0.5 - r() * 0.2]);
-    bushSpots.push([x + 0.4, house.y1 + 0.55 + r() * 0.25]);
-  }
-  for (let y = house.y0 + 0.6; y < house.y1; y += 1.8 + r() * 0.6) bushSpots.push([house.x0 - 0.55 - r() * 0.2, y]);
-  for (const p of scatter(6, (p) => ok(p, 1.2, 1.6, 1.0), 2.0, 6000)) bushSpots.push(p);
+  // 南墙、西墙根是绣球（garden.ts）；北墙根和草地上零星几丛普通灌木
+  for (let x = house.x0 + 0.6; x < indoorX1 - 0.3; x += 1.7 + r() * 0.9) bushSpots.push([x + 0.4, house.y1 + 0.55 + r() * 0.25]);
+  for (const p of scatter(5, (p) => ok(p, 1.2, 1.6, 1.0) && p[1] > house.y0, 2.0, 6000)) bushSpots.push(p);
   const bushes = bushSpots.filter(doorGap);
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -182,7 +120,11 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
     group.add(mesh);
   });
 
-  // ───────── 草丛：草地上密密的一层（离房子、小路、沙滩都留一点边） ─────────
+  // ───────── 房边庭院：绣球、竹子、蒲苇、雏菊、踏步石、石灯笼 ─────────
+  const garden = buildGarden(island, house, indoorX1);
+  group.add(garden.group);
+
+  // ───────── 草丛：草地上密密的一层（离房子、小路、沙滩、庭院植物都留一点边） ─────────
   const tufts: Vec2[] = [];
   {
     const e = island.extent;
@@ -190,6 +132,7 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
       const p: Vec2 = [e.x0 + r() * (e.x1 - e.x0), e.y0 + r() * (e.y1 - e.y0)];
       const d = island.shore(p);
       if (d < 1.5 || island.nearHouse(p, 0.25) || island.pathDist(p) < 0.62) continue;
+      if (garden.occupied.some((o) => Math.hypot(o.p[0] - p[0], o.p[1] - p[1]) < o.r)) continue;
       // 按低频噪声成片分布：有的地方密，有的地方只有短草
       if (fbm(p[0] * 0.35, p[1] * 0.35, 2, 13) < 0.42 + r() * 0.15) continue;
       tufts.push(p);
@@ -318,9 +261,10 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
     group,
     trees,
     practicals,
-    emissive,
+    emissive: [...emissive, ...garden.emissive],
     update(dt, camera, targets) {
       time.value += dt;
+      garden.update(dt);
       trees.update(dt, camera, targets);
     },
   };

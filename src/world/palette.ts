@@ -11,9 +11,23 @@ export const PALETTE = {
   ground: { path: '#c9b08a', sand: '#dccaa4', earth: '#a3825f', rock: '#a8a198', rockDark: '#857e76' },
   // 植被：树冠同样是 3～4 个明度带；粉色花树是唯一的次要点缀，呼应笑笑的腮红
   foliage: { lit: '#b2cf7a', mid: '#86b067', shade: '#5f8b58', trunk: '#8b6a50', blossom: '#f6cdd2', blossomShade: '#e8b3bb', reed: '#a5b673' },
+  // 绣球：米白、浅蓝、蓝、蓝紫（每棵随机取一种，花头再略微变化）
+  hydrangea: ['#eceee0', '#c9d3ec', '#a8b4e4', '#9aa6dc', '#a99bd8'],
   flowers: ['#fbf6ec', '#f6dd8c', '#f3c3cb', '#cfe0f2'],
-  // 房子外观：暖白灰泥墙 + 原木 + 石材墙基；陶土红屋顶是整个画面唯一的高饱和暖色焦点
-  exterior: { plaster: '#f4ece0', stone: '#beb5a8', timber: '#b48a62', timberDark: '#8f6a4a', roof: '#c7674c', roofDark: '#a8513c', trim: '#fbf6ee', door: '#7f9d8e' },
+  // 房子外观（客户参考图 2026-11-18）：白色细抹灰墙 + 一道浅灰混凝土勒脚；深炭灰立边金属屋面、薄檐口、檐下露出木椽；
+  // 深灰细窗框；竖向木板门 + 黑框壁灯。画面的颜色焦点改由樱花的粉和绣球的蓝紫来承担
+  exterior: {
+    plaster: '#f3f2ee',
+    plinth: '#c4c2bd',
+    roof: '#5c5c5d',
+    roofEdge: '#454546',
+    soffit: '#cdb79a',
+    timber: '#b48a62',
+    timberDark: '#8f6a4a',
+    frame: '#4b4d51',
+    door: '#6e4c36',
+    stone: '#bcb8b0',
+  },
   // 室内：每个房间一种墙色，都在同一个暖色家族里，靠明度和冷暖区分
   rooms: {
     foyer: { wall: '#efe5d6', rug: '#d8c4a6', accent: '#b48a62' },
@@ -61,7 +75,7 @@ export interface LightingPreset {
 export const LIGHTING: Record<TimeOfDay, LightingPreset> = {
   // 白天：高而暖的太阳，蓝色天光补阴影；画面最亮处是云的受光面
   day: {
-    sunAzimuth: 130,
+    sunAzimuth: 235,
     sunElevation: 52,
     sunColor: '#fff2d8',
     sunIntensity: 2.3,
