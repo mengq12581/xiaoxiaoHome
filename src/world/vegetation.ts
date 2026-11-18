@@ -82,7 +82,7 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   add([house.x0 - 3.0, house.y1 + 0.2], 0.8, 'sakura');
   add([house.x0 + 3.0, house.y0 - 2.4], 0.62, 'sapling');
   add([house.x1 + 1.3, house.y0 - 1.6], 0.55, 'sapling');
-  add([house.x0 - 2.5, house.y0 + 2.0], 0.5, 'sapling');
+  add([house.x0 - 2.2, house.y1 - 1.5], 0.5, 'sapling');
   add([house.x0 + 1.2, house.y1 + 4.6], 1.2, 'green'); // 屋后土坡上一棵大树，打破地平线
   const placed: Vec2[] = spots.map((s) => s.p);
   // 绿叶大树只种在房子北面和东西两侧靠后，把南面、门前留给樱花和花草
@@ -92,6 +92,37 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   }
   const trees = buildTrees(spots);
   group.add(trees.group);
+
+  // 樱花树下落了一地花瓣（树冠范围内，越靠近树干越密）
+  const petals: { p: Vec2; a: number }[] = [];
+  for (const t of spots.filter((s) => s.kind === 'sakura')) {
+    const R = 2.3 * t.scale;
+    for (let k = 0; k < 220 * t.scale; k++) {
+      const a = r() * Math.PI * 2;
+      const d = R * Math.sqrt(r()) * (0.4 + 0.6 * r());
+      const p: Vec2 = [t.p[0] + Math.cos(a) * d, t.p[1] + Math.sin(a) * d];
+      if (island.shore(p) < 0.3 || island.nearHouse(p, 0.05)) continue;
+      petals.push({ p, a: r() * 6.28 });
+    }
+  }
+  const petalGeo = new THREE.CircleGeometry(0.016, 5);
+  petalGeo.scale(1, 0.7, 1);
+  petalGeo.rotateX(-Math.PI / 2);
+  const petalMesh = new THREE.InstancedMesh(petalGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8, side: THREE.DoubleSide }), petals.length);
+  {
+    const pm = new THREE.Matrix4();
+    const pq = new THREE.Quaternion();
+    const pc = new THREE.Color();
+    petals.forEach((pt, i) => {
+      pq.setFromEuler(new THREE.Euler((r() - 0.5) * 0.5, pt.a, (r() - 0.5) * 0.5));
+      pm.compose(P(pt.p[0], ground(pt.p) + 0.035, pt.p[1]), pq, new THREE.Vector3(1, 1, 1).multiplyScalar(0.8 + r() * 0.5));
+      petalMesh.setMatrixAt(i, pm);
+      petalMesh.setColorAt(i, pc.setHSL(0.95, 0.45 + r() * 0.3, 0.88 + r() * 0.08));
+    });
+  }
+  petalMesh.receiveShadow = true;
+  petalMesh.name = 'fallen-petals';
+  group.add(petalMesh);
 
   // ───────── 灌木（沿房子墙根，避开门和阳台；草地上零星几丛） ─────────
   const bushLeaf = foliageMaterial(leafCard('bush', [96, 132, 64], 11).map, null);
@@ -128,29 +159,38 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
   const tufts: Vec2[] = [];
   {
     const e = island.extent;
-    for (let i = 0; i < 26000 && tufts.length < 2600; i++) {
+    for (let i = 0; i < 50000 && tufts.length < 5600; i++) {
       const p: Vec2 = [e.x0 + r() * (e.x1 - e.x0), e.y0 + r() * (e.y1 - e.y0)];
       const d = island.shore(p);
       if (d < 1.5 || island.nearHouse(p, 0.25) || island.pathDist(p) < 0.62) continue;
       if (garden.occupied.some((o) => Math.hypot(o.p[0] - p[0], o.p[1] - p[1]) < o.r)) continue;
-      // 按低频噪声成片分布：有的地方密，有的地方只有短草
-      if (fbm(p[0] * 0.35, p[1] * 0.35, 2, 13) < 0.42 + r() * 0.15) continue;
+      // 按低频噪声略有疏密（只剔掉少数地方），整体是一片连着的草地，不是一块块草团
+      if (fbm(p[0] * 0.35, p[1] * 0.35, 2, 13) < 0.3 + r() * 0.12) continue;
       tufts.push(p);
     }
   }
   const tuftMesh = new THREE.InstancedMesh(tuftGeometry(), foliageMaterial(grassCard(), time, 0.35), tufts.length);
   tufts.forEach((p, i) => {
-    const s = 0.55 + r() * 0.7;
+    // 草丛小而密，颜色贴近地面：远看是一片草地，不是一块块深色的草团
+    const s = 0.42 + r() * 0.5;
     m4.compose(P(p[0], ground(p) - 0.02, p[1]), q.setFromAxisAngle(Y, r() * 6.28), new THREE.Vector3(s, s * (0.7 + r() * 0.6), s));
     tuftMesh.setMatrixAt(i, m4);
-    tuftMesh.setColorAt(i, col.setHSL(0.18 + (r() - 0.5) * 0.05, 0.15 + r() * 0.2, 0.78 + r() * 0.2));
+    tuftMesh.setColorAt(i, col.setHSL(0.17 + (r() - 0.5) * 0.05, 0.12 + r() * 0.18, 0.86 + r() * 0.14));
   });
   tuftMesh.receiveShadow = true;
   tuftMesh.name = 'grass-tufts';
   group.add(tuftMesh);
 
-  // ───────── 花：灌木旁边和小路两侧一小撮一小撮 ─────────
-  const flowerGeo = new THREE.IcosahedronGeometry(0.035, 1);
+  // ───────── 野花：灌木旁边和小路两侧一小撮一小撮（朝上开的五瓣小花，不是小圆球） ─────────
+  const flowerShape = new THREE.Shape();
+  for (let k = 0; k <= 20; k++) {
+    const a = (k / 20) * Math.PI * 2;
+    const rad = 0.035 * (0.55 + 0.45 * Math.abs(Math.cos(a * 2.5)));
+    if (k === 0) flowerShape.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    else flowerShape.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+  }
+  const flowerGeo = new THREE.ShapeGeometry(flowerShape);
+  flowerGeo.rotateX(-Math.PI / 2);
   const flowerSpots: { p: Vec2; c: string }[] = [];
   for (const b of bushes) {
     if (r() < 0.4) continue;
@@ -161,9 +201,9 @@ export function buildVegetation(island: Island, house: { x0: number; y0: number;
     const c = PALETTE.flowers[Math.floor(r() * PALETTE.flowers.length)];
     for (let k = 0; k < 8; k++) flowerSpots.push({ p: [p[0] + (r() - 0.5) * 0.55, p[1] + (r() - 0.5) * 0.55], c });
   }
-  const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ roughness: 0.7 }), flowerSpots.length);
+  const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide }), flowerSpots.length);
   flowerSpots.forEach((f, i) => {
-    m4.compose(P(f.p[0], ground(f.p) + 0.14 + r() * 0.14, f.p[1]), q.identity(), new THREE.Vector3(1, 0.7, 1).multiplyScalar(0.8 + r() * 0.6));
+    m4.compose(P(f.p[0], ground(f.p) + 0.1 + r() * 0.12, f.p[1]), q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.6, r() * 6.28, (r() - 0.5) * 0.6)), new THREE.Vector3(1, 1, 1).multiplyScalar(0.7 + r() * 0.6));
     flowers.setMatrixAt(i, m4);
     flowers.setColorAt(i, col.set(f.c));
   });

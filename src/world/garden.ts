@@ -10,11 +10,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Vec2 } from '../config/types';
 import { P } from '../scene/house';
-import { bushGeometry, foliageMaterial, tuftGeometry } from './foliage';
+import { bushGeometry, floretHeadGeometry, foliageMaterial, fountainGeometry } from './foliage';
 import type { Island } from './island';
 import { rng } from './noise';
 import { PALETTE } from './palette';
-import { bambooLeafCard, broadLeafCard, daisyCard, grassCard, hydrangeaMaps, plasterMaps, plumeCard, rockMaps } from './textures';
+import { bambooCulm, bambooLeafCard, broadLeafCard, daisyCard, hydrangeaFloret, hydrangeaMaps, plasterMaps, plumeCard, rockMaps } from './textures';
 
 export interface Garden {
   group: THREE.Group;
@@ -78,18 +78,26 @@ export function buildGarden(island: Island, house: Box, indoorX1: number): Garde
   });
   hLeaves.castShadow = hLeaves.receiveShadow = true;
   hLeaves.name = 'hydrangea-leaves';
+  // 花头 = 半球面上铺 30 朵四瓣小花（边缘是一朵朵花的轮廓，不再是光滑的球）+ 里面一个略暗的芯（补花片之间的缝）
   const hm = hydrangeaMaps();
-  const headGeo = new THREE.SphereGeometry(0.095, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
-  const hHeads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ map: hm.map, normalMap: hm.normalMap, roughness: 0.8 }), heads.length);
+  const floretGeo = floretHeadGeometry(3, 30, 0.1, 0.055);
+  const coreGeo = new THREE.SphereGeometry(0.082, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  coreGeo.translate(0, 0.035, 0);
+  const hFlorets = new THREE.InstancedMesh(floretGeo, foliageMaterial(hydrangeaFloret(), null, 0, 0.4), heads.length);
+  const hCores = new THREE.InstancedMesh(coreGeo, new THREE.MeshStandardMaterial({ map: hm.map, normalMap: hm.normalMap, roughness: 0.85 }), heads.length);
   heads.forEach((h, i) => {
-    m4.compose(h.p, q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.6, r() * 6, (r() - 0.5) * 0.6)), new THREE.Vector3(h.s, h.s * 0.8, h.s));
-    hHeads.setMatrixAt(i, m4);
-    hHeads.setColorAt(i, col.set(h.c).offsetHSL((r() - 0.5) * 0.03, (r() - 0.5) * 0.1, (r() - 0.5) * 0.06));
+    m4.compose(h.p, q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.6, r() * 6, (r() - 0.5) * 0.6)), new THREE.Vector3(h.s, h.s * 0.85, h.s));
+    hFlorets.setMatrixAt(i, m4);
+    hCores.setMatrixAt(i, m4);
+    col.set(h.c).offsetHSL((r() - 0.5) * 0.03, (r() - 0.5) * 0.1, (r() - 0.5) * 0.06);
+    hFlorets.setColorAt(i, col);
+    hCores.setColorAt(i, col.multiplyScalar(0.78));
   });
-  hHeads.castShadow = true;
-  hHeads.receiveShadow = true;
-  hHeads.name = 'hydrangea-heads';
-  group.add(hLeaves, hHeads);
+  hFlorets.castShadow = hCores.castShadow = true;
+  hFlorets.receiveShadow = hCores.receiveShadow = true;
+  hFlorets.name = 'hydrangea-florets';
+  hCores.name = 'hydrangea-cores';
+  group.add(hLeaves, hFlorets, hCores);
 
   // ───────── 竹子 ─────────
   const clumps: { p: Vec2; n: number; h: number }[] = [
@@ -107,22 +115,23 @@ export function buildGarden(island: Island, house: Box, indoorX1: number): Garde
   }
   const culmGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   culmGeo.translate(0, 0.5, 0);
-  const culmMesh = new THREE.InstancedMesh(culmGeo, new THREE.MeshStandardMaterial({ color: '#8fa25c', roughness: 0.55 }), culms.length);
+  // 竹竿贴图带竹节（整根 8 节，随竿高自动拉开间距）
+  const culmMesh = new THREE.InstancedMesh(culmGeo, new THREE.MeshStandardMaterial({ map: bambooCulm(), roughness: 0.45 }), culms.length);
   const leafCards: THREE.Matrix4[] = [];
   culms.forEach((c, i) => {
     q.setFromEuler(c.lean);
     m4.compose(c.base, q, new THREE.Vector3(c.r, c.h, c.r));
     culmMesh.setMatrixAt(i, m4);
-    culmMesh.setColorAt(i, col.set('#8fa25c').offsetHSL((r() - 0.5) * 0.04, 0, (r() - 0.5) * 0.12));
+    culmMesh.setColorAt(i, col.setRGB(1, 1, 1).offsetHSL((r() - 0.5) * 0.03, 0, -r() * 0.15));
     const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    // 竹叶：上半截一簇簇
-    for (let k = 0; k < 13; k++) {
-      const t = 0.4 + r() * 0.6;
+    // 竹叶：上半截一簇簇，越往上越密，小枝向外伸、叶子往下垂
+    for (let k = 0; k < 20; k++) {
+      const t = 0.35 + Math.sqrt(r()) * 0.65;
       const at = c.base.clone().addScaledVector(axis, c.h * t);
       const a = r() * Math.PI * 2;
-      const off = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(0.12 + r() * 0.12);
-      const lq = new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - 0.5) * 1.2, a, (r() - 0.5) * 1.2));
-      const s = 0.36 + r() * 0.2;
+      const off = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(0.1 + r() * 0.16);
+      const lq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3 + r() * 0.7, a, (r() - 0.5) * 0.8, 'YXZ'));
+      const s = 0.3 + r() * 0.22;
       leafCards.push(new THREE.Matrix4().compose(at.add(off), lq, new THREE.Vector3(s, s, s)));
     }
   });
@@ -148,43 +157,56 @@ export function buildGarden(island: Island, house: Box, indoorX1: number): Garde
     [house.x0 - 1.1, house.y1 + 0.4],
     [indoorX1 - 3.0, house.y0 - 1.5],
   ].filter((p) => !onPath(p as Vec2, 0.7)) as Vec2[];
-  const fountain = tuftGeometry();
-  const blades = new THREE.InstancedMesh(fountain, foliageMaterial(grassCard(), time, 0.25), pampas.length * 3);
-  const plumeGeo = new THREE.PlaneGeometry(0.13, 0.8);
-  plumeGeo.translate(0, 0.42, 0);
+  // 叶丛是真实几何的细长拱形叶（不是贴图卡片），花穗是十字交叉的两张卡片，从叶丛里高高伸出来
+  const fountains = [fountainGeometry(81, 48, 0.95), fountainGeometry(82, 42, 0.85)];
+  const bladeMat = foliageMaterial(null, time, 0.12);
+  // 两种叶丛交替用：第 0 种放偶数号、第 1 种放奇数号
+  const bladeMeshes = fountains.map((g, k) => new THREE.InstancedMesh(g, bladeMat, Math.floor((pampas.length + 1 - k) / 2)));
+  const plumeGeo = mergeGeometries([0, Math.PI / 3, (Math.PI * 2) / 3].map((a) => {
+    const g = new THREE.PlaneGeometry(0.2, 0.95);
+    g.translate(0, 0.475, 0);
+    g.rotateY(a);
+    return g;
+  }))!;
   const plumeMats: THREE.Matrix4[] = [];
   pampas.forEach((p, i) => {
     occupied.push({ p, r: 0.6 });
     const base = P(p[0], ground(p) - 0.03, p[1]);
-    for (let k = 0; k < 3; k++) {
-      m4.compose(base, q.setFromAxisAngle(Y, r() * 6.28), new THREE.Vector3(1.6 + r() * 0.4, 2.4 + r() * 0.6, 1.6 + r() * 0.4));
-      blades.setMatrixAt(i * 3 + k, m4);
-      blades.setColorAt(i * 3 + k, col.setHSL(0.15, 0.12, 0.85 + r() * 0.1));
-    }
-    for (let k = 0; k < 11; k++) {
+    const bm = bladeMeshes[i % 2];
+    const s0 = 0.9 + r() * 0.3;
+    m4.compose(base, q.setFromAxisAngle(Y, r() * 6.28), new THREE.Vector3(s0, s0, s0));
+    bm.setMatrixAt(Math.floor(i / 2), m4);
+    for (let k = 0; k < 9; k++) {
       const a = r() * Math.PI * 2;
-      const tilt = 0.1 + r() * 0.35;
-      const pq = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.sin(a) * tilt, a, Math.cos(a) * tilt, 'YXZ'));
-      const at = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.08, 0.45 + r() * 0.3, Math.sin(a) * 0.08));
-      const s = 0.85 + r() * 0.35;
+      const tilt = 0.05 + r() * 0.3;
+      const pq = new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, a, 0, 'YXZ'));
+      const at = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.07, 0.3 + r() * 0.25, Math.sin(a) * 0.07));
+      const s = 0.9 + r() * 0.35;
       plumeMats.push(new THREE.Matrix4().compose(at, pq, new THREE.Vector3(s, s, s)));
     }
   });
-  blades.name = 'pampas-blades';
-  const plumes = new THREE.InstancedMesh(plumeGeo, foliageMaterial(plumeCard(), time, 0.06), plumeMats.length);
+  bladeMeshes.forEach((m, i) => {
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.name = `pampas-blades-${i}`;
+  });
+  // 花穗边缘是一丝丝细毛：用多重采样的「透明度转覆盖率」，边缘柔和，不像剪纸
+  const plumeMat = foliageMaterial(plumeCard(), time, 0.05, 0.2);
+  plumeMat.alphaToCoverage = true;
+  const plumes = new THREE.InstancedMesh(plumeGeo, plumeMat, plumeMats.length);
   plumeMats.forEach((m, i) => {
     plumes.setMatrixAt(i, m);
-    plumes.setColorAt(i, col.setHSL(0.06, 0.2 + r() * 0.25, 0.9 + r() * 0.08));
+    plumes.setColorAt(i, col.setHSL(0.07, 0.15 + r() * 0.3, 0.88 + r() * 0.1));
   });
   plumes.castShadow = true;
   plumes.name = 'pampas-plumes';
-  group.add(blades, plumes);
+  group.add(...bladeMeshes, plumes);
 
   // ───────── 雏菊：绣球前面和小路两边成片 ─────────
   const daisySpots: Vec2[] = [];
   for (const h of hydra) {
     const out: Vec2 = h[1] < house.y0 ? [0, -1] : [-1, 0];
-    for (let k = 0; k < 4; k++) daisySpots.push([h[0] + out[0] * (0.55 + r() * 0.35) + (r() - 0.5) * 0.7, h[1] + out[1] * (0.55 + r() * 0.35) + (r() - 0.5) * 0.7]);
+    for (let k = 0; k < 6; k++) daisySpots.push([h[0] + out[0] * (0.55 + r() * 0.35) + (r() - 0.5) * 0.7, h[1] + out[1] * (0.55 + r() * 0.35) + (r() - 0.5) * 0.7]);
   }
   const pts = island.pathPoints;
   for (let i = 1; i < pts.length - 4; i++) {

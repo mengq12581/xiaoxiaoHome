@@ -66,7 +66,7 @@ function sakuraPreset(seed: number): AshPreset {
     segments: [8, 5, 3, 3],
     sections: [8, 6, 4, 3],
   });
-  p.leaves = { angle: 45, count: 9, start: 0.2, size: 4.2, sizeVariance: 0.5, alphaTest: 0.5 };
+  p.leaves = { angle: 45, count: 12, start: 0.15, size: 4.4, sizeVariance: 0.5, alphaTest: 0.5 };
   return p;
 }
 

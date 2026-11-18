@@ -324,8 +324,8 @@ export function grassCard(): THREE.Texture {
       const w = 1.6 + r() * 2.2;
       const grad = g.createLinearGradient(0, H, 0, H - hgt);
       const k = 0.75 + r() * 0.4;
-      grad.addColorStop(0, `rgb(${Math.round(58 * k)},${Math.round(82 * k)},${Math.round(36 * k)})`);
-      grad.addColorStop(0.6, `rgb(${Math.round(112 * k)},${Math.round(146 * k)},${Math.round(66 * k)})`);
+      grad.addColorStop(0, `rgb(${Math.round(84 * k)},${Math.round(112 * k)},${Math.round(52 * k)})`);
+      grad.addColorStop(0.6, `rgb(${Math.round(124 * k)},${Math.round(156 * k)},${Math.round(72 * k)})`);
       grad.addColorStop(1, `rgb(${Math.round(176 * k)},${Math.round(184 * k)},${Math.round(104 * k)})`);
       g.fillStyle = grad;
       g.beginPath();
@@ -486,10 +486,10 @@ export function hydrangeaMaps(): MaterialMaps {
   return { map, normalMap };
 }
 
-/** 宽叶卡片（绣球的叶子）：几片对生的卵形大叶，叶脉明显 */
+/** 宽叶卡片（绣球的叶子）：几片对生的卵形大叶，叶尖略亮、叶基略暗，主脉 + 侧脉，边缘细锯齿 */
 export function broadLeafCard(): THREE.Texture {
   return cached('broad-leaf', () => {
-    const size = 128;
+    const size = 256;
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d')!;
@@ -497,24 +497,50 @@ export function broadLeafCard(): THREE.Texture {
     for (let i = 0; i < 5; i++) {
       const a = -Math.PI / 2 + (i - 2) * 0.55 + (r() - 0.5) * 0.2;
       const len = size * (0.36 + r() * 0.1);
+      const w = len * 0.32;
       g.save();
       g.translate(size / 2, size * 0.95);
       g.rotate(a + Math.PI / 2);
       const k = 0.8 + r() * 0.3;
-      g.fillStyle = `rgb(${clamp255(70 * k)},${clamp255(110 * k)},${clamp255(56 * k)})`;
+      const grad = g.createLinearGradient(0, 0, 0, -len * 1.1);
+      grad.addColorStop(0, `rgb(${clamp255(52 * k)},${clamp255(86 * k)},${clamp255(42 * k)})`);
+      grad.addColorStop(1, `rgb(${clamp255(98 * k)},${clamp255(140 * k)},${clamp255(70 * k)})`);
+      g.fillStyle = grad;
+      // 叶缘细锯齿：沿椭圆一圈，半径交替起伏
       g.beginPath();
-      g.ellipse(0, -len * 0.55, len * 0.32, len * 0.55, 0, 0, Math.PI * 2);
+      const N = 60;
+      for (let j = 0; j <= N; j++) {
+        const th = (j / N) * Math.PI * 2;
+        const saw = j % 2 ? 1 : 0.94;
+        const x = Math.cos(th) * w * saw;
+        const y = -len * 0.55 + Math.sin(th) * len * 0.55 * saw;
+        if (j === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
       g.fill();
-      g.strokeStyle = 'rgba(190,220,160,0.35)';
-      g.lineWidth = 1.2;
+      g.strokeStyle = 'rgba(200,226,170,0.45)';
+      g.lineWidth = 1.6;
       g.beginPath();
       g.moveTo(0, 0);
       g.lineTo(0, -len * 1.05);
       g.stroke();
+      g.lineWidth = 0.9;
+      g.strokeStyle = 'rgba(190,220,160,0.3)';
+      for (let v = 1; v < 7; v++) {
+        const y = -len * (0.12 + v * 0.13);
+        const span = w * Math.sin((v / 7) * Math.PI) * 0.9;
+        for (const sgn of [-1, 1]) {
+          g.beginPath();
+          g.moveTo(0, y);
+          g.quadraticCurveTo(sgn * span * 0.5, y - len * 0.04, sgn * span, y - len * 0.1);
+          g.stroke();
+        }
+      }
       g.restore();
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
     return t;
   });
 }
@@ -564,39 +590,105 @@ export function daisyCard(): THREE.Texture {
   });
 }
 
-/** 芦苇草（蒲苇）花穗卡片：一根细茎顶着蓬松的羽毛状花穗 */
+/** 芒草花穗卡片：细茎顶上一束蓬松的羽毛状花穗（中间密、边缘是一丝丝飘出去的细毛），整体略向一侧弯 */
 export function plumeCard(): THREE.Texture {
   return cached('plume', () => {
-    const W = 64;
-    const H = 256;
+    const W = 128;
+    const H = 512;
     const c = document.createElement('canvas');
     c.width = W;
     c.height = H;
     const g = c.getContext('2d')!;
     const r = rng(67);
-    g.strokeStyle = 'rgb(150,140,110)';
+    const bend = (y: number) => Math.pow(1 - y / H, 2) * W * 0.1; // 越往上越偏
+    g.strokeStyle = 'rgb(160,150,118)';
     g.lineWidth = 2;
     g.beginPath();
-    g.moveTo(W / 2, H);
-    g.lineTo(W / 2, H * 0.35);
+    for (let y = H; y >= H * 0.25; y -= 8) g.lineTo(W / 2 + bend(y), y);
     g.stroke();
-    // 花穗：上窄下宽的一团细丝
-    for (let i = 0; i < 900; i++) {
-      const t = r();
-      const y = H * (0.02 + t * 0.42);
-      const spread = Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.9) * W * 0.36;
-      const x = W / 2 + (r() - 0.5) * 2 * spread;
-      const len = 6 + r() * 10;
-      const k = 0.85 + r() * 0.15;
-      g.strokeStyle = `rgba(${clamp255(246 * k)},${clamp255(236 * k)},${clamp255(222 * k)},0.7)`;
-      g.lineWidth = 1;
+    // 花穗：一根根细小穗从中轴斜向上长出，穗上是细毛；中间密、外缘稀
+    for (let i = 0; i < 3200; i++) {
+      const t = Math.pow(r(), 0.85);
+      const y = H * (0.02 + t * 0.48);
+      const width = Math.sin(Math.min(1, t * 1.1) * Math.PI * 0.95) * W * 0.32;
+      const x0 = W / 2 + bend(y);
+      const off = (r() - 0.5) * 2 * width * Math.pow(r(), 0.6);
+      const len = 6 + r() * 16;
+      const k = 0.9 + r() * 0.1;
+      const edge = Math.abs(off) / (width + 1);
+      g.strokeStyle = `rgba(${clamp255(250 * k)},${clamp255(243 * k)},${clamp255(230 * k)},${(0.85 - edge * 0.6).toFixed(2)})`;
+      g.lineWidth = 0.8 + (1 - edge) * 0.8;
       g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + (x - W / 2) * 0.15, y + len);
+      g.moveTo(x0 + off * 0.3, y);
+      g.lineTo(x0 + off, y + len * 0.4);
+      g.lineTo(x0 + off * 1.15, y + len);
       g.stroke();
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  });
+}
+
+/** 绣球的一朵小花（四瓣、花瓣边缘略深、花心一点），白底，颜色由实例色决定；alpha = 形状 */
+export function hydrangeaFloret(): THREE.Texture {
+  return cached('hydrangea-floret', () => {
+    const size = 64;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d')!;
+    const m = size / 2;
+    for (let p = 0; p < 4; p++) {
+      const a = (p / 4) * Math.PI * 2 + 0.3;
+      g.save();
+      g.translate(m + Math.cos(a) * m * 0.42, m + Math.sin(a) * m * 0.42);
+      g.rotate(a);
+      const grad = g.createRadialGradient(-m * 0.2, 0, 0, 0, 0, m * 0.5);
+      grad.addColorStop(0, 'rgb(255,255,255)');
+      grad.addColorStop(0.7, 'rgb(236,236,240)');
+      grad.addColorStop(1, 'rgb(200,200,212)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(0, 0, m * 0.48, m * 0.4, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    g.fillStyle = 'rgb(170,180,150)';
+    g.beginPath();
+    g.arc(m, m, m * 0.1, 0, Math.PI * 2);
+    g.fill();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  });
+}
+
+/** 竹竿：竖向的绿，每隔一段一道竹节（深色细线 + 上方一圈浅色），整张 8 节 */
+export function bambooCulm(): THREE.Texture {
+  return cached('bamboo-culm', () => {
+    const W = 16;
+    const H = 256;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d')!;
+    const grad = g.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, 'rgb(118,140,70)');
+    grad.addColorStop(0.5, 'rgb(150,170,92)');
+    grad.addColorStop(1, 'rgb(118,140,70)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 8; i++) {
+      const y = (i / 8) * H;
+      g.fillStyle = 'rgb(84,96,52)';
+      g.fillRect(0, y, W, 2);
+      g.fillStyle = 'rgba(214,214,170,0.55)';
+      g.fillRect(0, y + 2, W, 3);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
   });
 }
