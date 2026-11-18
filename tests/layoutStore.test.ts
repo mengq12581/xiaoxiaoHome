@@ -80,6 +80,17 @@ describe('布局：移动、旋转、联动组', () => {
     expect(s.tryMove('sofa', [5.3, 0.6], seated)).toBeNull();
   });
 
+  it('玄关和客厅之间不砌墙：家具可以跨过分界线摆，归属按中心点；有墙的地方照样不能骑墙', () => {
+    const { items, rooms } = fresh();
+    const k = items.find((i) => i.id === 'kitchenette')!;
+    const [x0, x1] = [k.position[0] - k.size[0] / 2, k.position[0] + k.size[0] / 2];
+    expect(x0 < 2.2 && x1 > 2.2).toBe(true); // 厨房角本身就跨在分界线上
+    expect(roomContaining(k, rooms)).toBe('living');
+    expect(roomContaining({ position: [1.9, 0.5], rotation: 0, size: [1.2, 0.5, 0.8] }, rooms)).toBe('foyer');
+    // 玄关 / 卫生间之间是实墙：跨过去不行
+    expect(roomContaining({ position: [1.0, 4.2], rotation: 0, size: [0.8, 0.6, 0.8] }, rooms)).toBeNull();
+  });
+
   it('可以挪到另一个房间，room 字段跟着变', () => {
     const { items, rooms } = fresh();
     const s = new LayoutStore(items, rooms);

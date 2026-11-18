@@ -36,6 +36,38 @@ function rugTexture(base: string, border: string): THREE.CanvasTexture {
   return t;
 }
 
+/** 门垫：椰棕色的粗织面（一道道横向的织纹 + 细碎纤维），外圈一道深色包边，中间一行浅色细条 */
+function doormatTexture(): THREE.CanvasTexture {
+  // 横边对应门垫的宽（沿门洞方向），竖边对应进深
+  const W = 384;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#b48a5c';
+  g.fillRect(0, 0, W, H);
+  const r = rng(19);
+  for (let y = 0; y < H; y += 6) {
+    g.fillStyle = `rgba(${y % 12 ? '120,84,48' : '214,176,128'},0.35)`;
+    g.fillRect(0, y, W, 3);
+  }
+  for (let i = 0; i < 5000; i++) {
+    const k = r();
+    g.fillStyle = k < 0.5 ? 'rgba(90,60,34,0.25)' : 'rgba(232,200,150,0.22)';
+    g.fillRect(r() * W, r() * H, 1 + r() * 3, 1);
+  }
+  g.strokeStyle = '#5b4330';
+  g.lineWidth = 22;
+  g.strokeRect(11, 11, W - 22, H - 22);
+  g.fillStyle = 'rgba(240,222,190,0.75)';
+  g.fillRect(52, H / 2 - 5, W - 104, 10);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 function artTexture(seed: number, colors: string[]): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 160;
@@ -102,8 +134,11 @@ export function buildInteriorDecor(cfg: RoomsConfig, items: FurnitureItem[]): In
       paintBySegment.set(seg.id, g);
       group.add(g);
     }
-    const lo = edge.a + T / 2;
-    const hi = edge.b - T / 2;
+    // 墙角处让出半个墙厚（对面那堵墙的位置）；那一头是不砌墙的开放边界（玄关 | 客厅）时不用让，漆接着刷过去
+    const solidAt = (along: number) =>
+      layout.segments.some((sg) => sg.orient !== edge.orient && Math.abs(sg.c - along) < 1e-6 && edge.c >= sg.a - 1e-6 && edge.c <= sg.b + 1e-6);
+    const lo = edge.a + (solidAt(edge.a) ? T / 2 : 0);
+    const hi = edge.b - (solidAt(edge.b) ? T / 2 : 0);
     const across = seg.c + edge.inside * (T / 2 + 0.004);
     for (const p of wallPieces(seg, T)) {
       const s = Math.max(p.s, lo);
@@ -148,9 +183,30 @@ export function buildInteriorDecor(cfg: RoomsConfig, items: FurnitureItem[]): In
   const chair = find('office_chair');
   if (chair) rug(chair.position, 1.5, 1.3, chair.rotation, 'study');
   const foyer = cfg.rooms.find((r) => r.id === 'foyer');
-  if (foyer) {
-    const b = normBounds(foyer);
-    rug([b.x0 + 0.75, (b.y0 + b.y1) / 2 + 1.0], 0.9, 1.5, 0, 'foyer');
+  // 入户门内侧一块门垫（宽比门洞多 0.2 米，进深 0.65 米，贴着门槛）
+  const entryRoom = cfg.rooms.find((r) => r.doors.some((d) => d.id === 'entry_door'));
+  const entryDoor = entryRoom?.doors.find((d) => d.id === 'entry_door');
+  if (entryRoom && entryDoor) {
+    const b = normBounds(entryRoom);
+    const T = layout.thickness;
+    const side = entryDoor.wall.slice(entryRoom.id.length + 1);
+    const depth = 0.65;
+    const width = entryDoor.width + 0.2;
+    const off = T / 2 + 0.02 + depth / 2;
+    const [cx, cy, rot] =
+      side === 'left'
+        ? [b.x0 + off, entryDoor.at[1], 90]
+        : side === 'right'
+          ? [b.x1 - off, entryDoor.at[1], 90]
+          : side === 'bottom'
+            ? [entryDoor.at[0], b.y0 + off, 0]
+            : [entryDoor.at[0], b.y1 - off, 0];
+    const mat = new THREE.Mesh(new RoundedBoxGeometry(width, 0.016, depth, 2, 0.007), new THREE.MeshStandardMaterial({ map: doormatTexture(), roughness: 1 }));
+    mat.position.copy(P(cx, 0.008, cy));
+    mat.rotation.y = (rot * Math.PI) / 180;
+    mat.receiveShadow = true;
+    mat.name = 'doormat';
+    group.add(mat);
   }
 
   // ───────── 窗帘（卫生间不挂） ─────────

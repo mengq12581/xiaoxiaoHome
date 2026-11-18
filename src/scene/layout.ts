@@ -277,6 +277,59 @@ export function wallPieces(seg: WallSegment, thickness: number): WallPiece[] {
 }
 
 /** 全屋外接矩形（平面） */
+type Bounds = { x0: number; y0: number; x1: number; y1: number };
+
+/**
+ * 摆家具时可用的范围：房间之间那面墙标了 open（不砌墙，例如玄关和客厅）时，连通的几个房间合起来算一块。
+ * 只在合起来正好是一个矩形时合并（不规则的拼法仍按各自房间算）。返回 roomId 所在那一块的范围。
+ */
+export function placementBounds(cfg: RoomsConfig, roomId: string): Bounds | null {
+  const group = openGroupOf(cfg, roomId);
+  if (!group) return null;
+  const bs = group.map((id) => normBounds(cfg.rooms.find((r) => r.id === id)!));
+  const u: Bounds = { x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)), x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)) };
+  const area = bs.reduce((s, b) => s + (b.x1 - b.x0) * (b.y1 - b.y0), 0);
+  const rect = Math.abs(area - (u.x1 - u.x0) * (u.y1 - u.y0)) < 1e-6;
+  return rect ? u : normBounds(cfg.rooms.find((r) => r.id === roomId)!);
+}
+
+/** 和 roomId 之间有 open 墙相连的所有房间（含自己）；房间不存在返回 null */
+export function openGroupOf(cfg: RoomsConfig, roomId: string): string[] | null {
+  if (!cfg.rooms.some((r) => r.id === roomId)) return null;
+  const links = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!links.has(a)) links.set(a, new Set());
+    if (!links.has(b)) links.set(b, new Set());
+    links.get(a)!.add(b);
+    links.get(b)!.add(a);
+  };
+  const eps = 1e-6;
+  for (const room of cfg.rooms) {
+    const a = normBounds(room);
+    for (const w of room.walls ?? []) {
+      if (!w.open) continue;
+      const side = w.id.slice(room.id.length + 1) as Side;
+      for (const other of cfg.rooms) {
+        if (other === room) continue;
+        const b = normBounds(other);
+        const overlapY = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > eps;
+        const overlapX = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > eps;
+        if (
+          (side === 'right' && Math.abs(b.x0 - a.x1) < eps && overlapY) ||
+          (side === 'left' && Math.abs(b.x1 - a.x0) < eps && overlapY) ||
+          (side === 'top' && Math.abs(b.y0 - a.y1) < eps && overlapX) ||
+          (side === 'bottom' && Math.abs(b.y1 - a.y0) < eps && overlapX)
+        )
+          link(room.id, other.id);
+      }
+    }
+  }
+  const seen = new Set([roomId]);
+  const queue = [roomId];
+  while (queue.length) for (const n of links.get(queue.shift()!) ?? []) if (!seen.has(n)) (seen.add(n), queue.push(n));
+  return [...seen];
+}
+
 export function houseBounds(cfg: RoomsConfig): { x0: number; y0: number; x1: number; y1: number } {
   const bs = cfg.rooms.map(normBounds);
   return {

@@ -10,7 +10,7 @@ import {
   type RoomsConfig,
   type Vec2,
 } from './types';
-import { EPS, acrossOf, alongOf, allEdges, collectOpenings, footprint, normBounds, windowRange } from '../scene/layout';
+import { EPS, acrossOf, alongOf, allEdges, collectOpenings, footprint, normBounds, placementBounds, windowRange } from '../scene/layout';
 
 export interface ConfigIssue {
   file: string;
@@ -298,7 +298,8 @@ function validateFurniture(raw: unknown, rooms: RoomsConfig | null): ConfigIssue
       c.err(`${p}.room`, `未知房间「${it.room}」，可用：${rooms.rooms.map((r) => r.id).join(' / ')}`);
       return;
     }
-    const b = normBounds(room);
+    // 中间不砌墙（open）的房间合起来算一块：家具可以跨过分界线（例如厨房角从客厅伸进玄关）
+    const b = placementBounds(rooms, room.id) ?? normBounds(room);
     const pts = it.kind === 'window_spot' ? [it.position as Vec2] : footprint(it as never);
     const tol = 0.02;
     if (pts.some(([x, y]) => x < b.x0 - tol || x > b.x1 + tol || y < b.y0 - tol || y > b.y1 + tol)) {

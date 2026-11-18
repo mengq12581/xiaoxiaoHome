@@ -7,7 +7,7 @@
       "id": "foyer",
       "name": "玄关",
       "bounds": [[0, 0], [2.2, 4.2]],
-      "floor": "stone",
+      "floor": "wood_light",
       "walls": [{ "id": "foyer_right", "open": true }],
       "doors": [{ "id": "entry_door", "wall": "foyer_left", "at": [0, 3.55], "width": 0.9, "height": 2.1 }]
     },

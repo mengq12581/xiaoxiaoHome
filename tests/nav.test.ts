@@ -86,21 +86,14 @@ describe('寻路', () => {
     assertClear(pf, res.path);
   });
 
-  it('厨房角（客厅南墙靠玄关一侧）不挡玄关到客厅的动线：从入户门到沙发、电视前、卧室门都不用绕', () => {
+  it('厨房角（客厅南墙、伸进玄关一段）：从入户门仍能走到沙发、电视前、卧室门，不穿家具', () => {
+    // 客户 2026-11-18 取消了「不挡玄关到客厅动线」的要求，这里只保证走得到
     const pf = make();
-    const k = item('kitchenette');
-    expect(k.room).toBe('living');
-    expect(k.size[0]).toBeCloseTo(1.8);
     const door: Vec2 = [0.4, 3.55];
     for (const goal of [approachOf('sofa'), [5.2, 2.95] as Vec2, [2.95, 3.5] as Vec2]) {
       const res = pf.findPath(door, goal);
       expect(res.ok, `到 ${goal}`).toBe(true);
-      if (!res.ok) continue;
-      assertClear(pf, res.path);
-      // 和没有厨房角时一样短（厨房角不在路上）
-      const without = createPathfinder(raw.rooms, raw.furniture.items.filter((i: { id: string }) => i.id !== 'kitchenette')).findPath(door, goal);
-      expect(without.ok).toBe(true);
-      if (without.ok) expect(pathLength(res.path)).toBeCloseTo(pathLength(without.path), 3);
+      if (res.ok) assertClear(pf, res.path);
     }
   });
 

@@ -215,6 +215,8 @@ export function buildHouse(cfg: RoomsConfig): HouseView {
     const tex = floorTexture(room.floor).clone();
     tex.needsUpdate = true;
     tex.repeat.set(w / FLOOR_TEXTURE_METERS, d / FLOOR_TEXTURE_METERS);
+    // 纹理按世界坐标对齐：相邻两间铺同一种地板（玄关和客厅）时，地板缝在分界处接得上，看起来是一整片
+    tex.offset.set(b.x0 / FLOOR_TEXTURE_METERS, b.y0 / FLOOR_TEXTURE_METERS);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), soft(0xffffff, { map: tex, roughness: ROUGH.floor }));
     floor.position.copy(P((b.x0 + b.x1) / 2, -0.03, (b.y0 + b.y1) / 2));
     floor.receiveShadow = true;

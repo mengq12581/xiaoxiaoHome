@@ -5,7 +5,7 @@
 // 约束：整件家具必须落在同一个房间里（不骑墙、不堵在门洞里），不与别的家具重叠，不能压到人身上。
 
 import type { FurnitureItem, RoomsConfig, Vec2 } from '../config/types';
-import { footprint, normBounds, rotate2, DEFAULT_WALL_THICKNESS } from '../scene/layout';
+import { footprint, normBounds, placementBounds, rotate2, DEFAULT_WALL_THICKNESS } from '../scene/layout';
 
 export const LAYOUT_KEY = 'xiaoxiao-home.layout';
 /** 家具与墙面之间留的缝（米） */
@@ -86,15 +86,27 @@ export function rectHitsCircle(r: Rect, c: Vec2, radius: number): boolean {
   return Math.hypot(dx, dy) < radius - 1e-6;
 }
 
-/** 这块矩形完整落在哪个房间里（留出墙厚）；骑墙或出界返回 null */
+/**
+ * 这块矩形完整落在哪个房间里（留出墙厚）；骑墙或出界返回 null。
+ * 中间不砌墙（open）的几个房间合起来算一块（例如玄关 + 客厅）：可以跨过分界线摆，归属按中心点所在的房间。
+ */
 export function roomContaining(r: Rect, rooms: RoomsConfig): string | null {
   const inset = (rooms.wall_thickness ?? DEFAULT_WALL_THICKNESS) / 2 + WALL_GAP;
   const pts = footprint(r);
+  const inside = (b: { x0: number; y0: number; x1: number; y1: number }, p: Vec2) =>
+    p[0] >= b.x0 + inset - 1e-9 && p[0] <= b.x1 - inset + 1e-9 && p[1] >= b.y0 + inset - 1e-9 && p[1] <= b.y1 - inset + 1e-9;
   for (const room of rooms.rooms) {
     const b = normBounds(room);
-    if (pts.every((p) => p[0] >= b.x0 + inset - 1e-9 && p[0] <= b.x1 - inset + 1e-9 && p[1] >= b.y0 + inset - 1e-9 && p[1] <= b.y1 - inset + 1e-9)) return room.id;
+    if (pts.every((p) => inside(b, p))) return room.id;
   }
-  return null;
+  const c = r.position;
+  const home = rooms.rooms.find((room) => {
+    const b = normBounds(room);
+    return c[0] >= b.x0 && c[0] <= b.x1 && c[1] >= b.y0 && c[1] <= b.y1;
+  });
+  if (!home) return null;
+  const merged = placementBounds(rooms, home.id);
+  return merged && pts.every((p) => inside(merged, p)) ? home.id : null;
 }
 
 export class LayoutStore {

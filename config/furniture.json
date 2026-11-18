@@ -37,7 +37,7 @@
       "id": "kitchenette",
       "kind": "kitchenette",
       "room": "living",
-      "position": [3.17, 0.38],
+      "position": [2.57, 0.38],
       "rotation": 0,
       "size": [1.8, 0.6, 0.9],
       "draggable": false,
